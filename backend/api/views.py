@@ -3792,7 +3792,7 @@ def get_trending_reels(request):
         from django.db.models import Q, Count
         from datetime import timedelta
 
-        category = request.GET.get('category', 'trending')
+        category = request.GET.get('category', 'all')
         time_range = request.GET.get('time_range', '7d')
         try:
             limit = int(request.GET.get('limit', 20))
@@ -3828,7 +3828,7 @@ def get_trending_reels(request):
                 active_boost_campaign__start_time__gte=time_threshold,
             )
 
-        if category not in {'trending', 'all-posts'}:
+        if category not in {'trending', 'all-posts', 'all'}:
             # Use category field instead of keyword matching
             from .models import Category
             try:
@@ -3900,7 +3900,22 @@ def get_categories(request):
 
         categories = Category.objects.filter(is_active=True).order_by('order', 'name')
         serializer = CategorySerializer(categories, many=True)
-        return Response(serializer.data)
+        
+        # Deduplicate categories by slug and name (case-insensitive)
+        seen_slugs = set()
+        seen_names = set()
+        deduped = []
+        for item in serializer.data:
+            slug = (item.get('slug') or '').strip().lower()
+            name = (item.get('name') or '').strip().lower()
+            if not slug or not name:
+                continue
+            if slug not in seen_slugs and name not in seen_names:
+                seen_slugs.add(slug)
+                seen_names.add(name)
+                deduped.append(item)
+                
+        return Response(deduped)
     except Exception as e:
         print(f"[CATEGORIES] Error: {str(e)}")
         import traceback

@@ -347,7 +347,7 @@ def admin_generate_leaderboard(request, campaign_id):
     })
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([AllowAny])
 def get_leaderboard(request, campaign_id):
     """Get leaderboard for a campaign - calculates real-time scores using campaign scoring configuration"""
     try:

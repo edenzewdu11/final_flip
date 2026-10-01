@@ -233,9 +233,18 @@ export default function CreateScreen({ navigation, route }) {
     try {
       const data = await api.request('/categories/');
       if (Array.isArray(data) && data.length > 0) {
+        const seen = new Set();
+        const dedupedData = [];
+        for (const cat of data) {
+          const key = (cat.slug || cat.name || String(cat.id || '')).toLowerCase().trim();
+          if (key && !seen.has(key)) {
+            seen.add(key);
+            dedupedData.push(cat);
+          }
+        }
         const enriched = [
           { id: null, name: 'None', icon: 'sparkles-outline', emoji: '✨' },
-          ...data.map(cat => ({
+          ...dedupedData.map(cat => ({
             ...cat,
             icon: cat.icon || 'folder-outline',
             emoji: cat.emoji || '📁',

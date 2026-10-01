@@ -1530,16 +1530,35 @@ export default function HomeScreen({ navigation, route }) {
   const toggleLike = useCallback(async (post) => {
     const newLiked = !post.is_liked;
     const isCampaign = !!(post.is_campaign_post || post.campaign_id || post.campaign);
-    setPosts(prev => prev.map(p => p.id === post.id
-      ? { ...p, is_liked: newLiked, votes: newLiked ? (p.votes + 1) : Math.max(0, p.votes - 1) }
-      : p));
+    setPosts(prev => prev.map(p => {
+      if (p.id !== post.id) return p;
+      let newLikedBy = Array.isArray(p.liked_by) ? [...p.liked_by] : [];
+      if (newLiked && user) {
+        if (!newLikedBy.some(u => u.id === user.id)) {
+          newLikedBy = [{
+            id: user.id,
+            username: user.username,
+            full_name: (user.first_name || user.username),
+            profile_photo: user.profile_photo || user.profile?.profile_photo || null,
+          }, ...newLikedBy].slice(0, 2);
+        }
+      } else if (!newLiked && user) {
+        newLikedBy = newLikedBy.filter(u => u.id !== user.id);
+      }
+      return {
+        ...p,
+        is_liked: newLiked,
+        votes: newLiked ? (p.votes + 1) : Math.max(0, p.votes - 1),
+        liked_by: newLikedBy,
+      };
+    }));
     try {
       await api.request(`/reels/${post.id}/vote/`, { method: 'POST' });
     } catch (error) {
       console.log('Vote error:', error);
-      setPosts(prev => prev.map(p => p.id === post.id ? { ...p, is_liked: post.is_liked, votes: post.votes } : p));
+      setPosts(prev => prev.map(p => p.id === post.id ? { ...p, is_liked: post.is_liked, votes: post.votes, liked_by: post.liked_by } : p));
     }
-  }, [navigation, showCampaignToast]);
+  }, [user, navigation, showCampaignToast]);
 
   const toggleSave = useCallback(async (post) => {
     const newSaved = !post.is_saved;
@@ -1961,6 +1980,97 @@ export default function HomeScreen({ navigation, route }) {
     );
   };
 
+  const renderLikedBy = useCallback((post) => {
+    const totalVotes = post.votes || 0;
+    const likers = Array.isArray(post.liked_by) ? post.liked_by.slice(0, 2) : [];
+    if (totalVotes <= 0 && likers.length === 0) {
+      return null;
+    }
+
+    const getAvatarUri = (photo) => {
+      if (!photo) return null;
+      if (photo.startsWith('http://') || photo.startsWith('https://')) return photo;
+      const b = config.API_BASE_URL.replace('/api', '');
+      return photo.startsWith('/') ? b + photo : b + '/' + photo;
+    };
+
+    return (
+      <View style={styles.likedByContainer}>
+        {likers.length > 0 ? (
+          <View style={styles.likedByAvatarsRow}>
+            {likers.map((u, i) => {
+              const photoUri = getAvatarUri(u.profile_photo);
+              return (
+                <TouchableOpacity
+                  key={u.id || i}
+                  activeOpacity={0.8}
+                  onPress={() => u.id && navigation.navigate('ProfileStack', { userId: u.id })}
+                  style={[
+                    styles.likedByAvatarWrap,
+                    { borderColor: colors.cardBg },
+                    i > 0 && styles.likedByAvatarOverlap,
+                  ]}
+                >
+                  {photoUri ? (
+                    <Image source={{ uri: photoUri }} style={styles.likedByAvatarImg} resizeMode="cover" />
+                  ) : (
+                    <Text style={styles.likedByAvatarInitials}>
+                      {(u.username?.[0] || 'U').toUpperCase()}
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        ) : (
+          <Ionicons name="heart" size={13} color="#8fc441" style={{ marginRight: 2 }} />
+        )}
+
+        <Text style={[styles.likedByText, { color: colors.textSecondary }]}>
+          Liked by{' '}
+          {likers.length > 0 ? (
+            likers.length === 1 ? (
+              <>
+                <Text
+                  style={[styles.likedByBold, { color: colors.text }]}
+                  onPress={() => likers[0].id && navigation.navigate('ProfileStack', { userId: likers[0].id })}
+                >
+                  {likers[0].username}
+                </Text>
+                {totalVotes > 1 ? (
+                  <> and <Text style={[styles.likedByBold, { color: colors.text }]}>{totalVotes - 1} {totalVotes - 1 === 1 ? 'other' : 'others'}</Text></>
+                ) : null}
+              </>
+            ) : (
+              <>
+                <Text
+                  style={[styles.likedByBold, { color: colors.text }]}
+                  onPress={() => likers[0].id && navigation.navigate('ProfileStack', { userId: likers[0].id })}
+                >
+                  {likers[0].username}
+                </Text>
+                {', '}
+                <Text
+                  style={[styles.likedByBold, { color: colors.text }]}
+                  onPress={() => likers[1].id && navigation.navigate('ProfileStack', { userId: likers[1].id })}
+                >
+                  {likers[1].username}
+                </Text>
+                {totalVotes > 2 ? (
+                  <> and <Text style={[styles.likedByBold, { color: colors.text }]}>{totalVotes - 2} {totalVotes - 2 === 1 ? 'other' : 'others'}</Text></>
+                ) : null}
+              </>
+            )
+          ) : (
+            <Text style={[styles.likedByBold, { color: colors.text }]}>
+              {totalVotes} {totalVotes === 1 ? 'person' : 'people'}
+            </Text>
+          )}
+        </Text>
+      </View>
+    );
+  }, [navigation, colors]);
+
   const renderPost = useCallback(({ item: post, index }) => {
     // Render horizontal suggestions after 2nd post (index 1)
     if (post.type === 'horizontal_suggestions' || post.type === 'suggestions') {
@@ -2177,6 +2287,9 @@ export default function HomeScreen({ navigation, route }) {
           </View>
         </View>
 
+        {/* Liked by preview: 1 or 2 users who liked the post */}
+        {renderLikedBy(post)}
+
         {/* Caption */}
         {post.caption && (
           <TouchableOpacity 
@@ -2230,7 +2343,7 @@ export default function HomeScreen({ navigation, route }) {
         )}
       </View>
     );
-  }, [user, followStates, navigation, toggleLike, toggleSave, sharePost, goToReel, openComments, openGiftModal, showPostOptions, showCampaignToast, openBoostModal]);
+  }, [user, followStates, navigation, toggleLike, toggleSave, sharePost, goToReel, openComments, openGiftModal, showPostOptions, showCampaignToast, openBoostModal, renderLikedBy]);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
@@ -3478,6 +3591,50 @@ const styles = StyleSheet.create({
     color: LIGHT_GOLD, 
     marginLeft: 3,
     fontWeight: '600',
+  },
+
+  // Liked By Profile Avatars and Text
+  likedByContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingBottom: 6,
+    gap: 8,
+  },
+  likedByAvatarsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  likedByAvatarWrap: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 1.5,
+    backgroundColor: '#2A2A2A',
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
+  },
+  likedByAvatarOverlap: {
+    marginLeft: -8,
+  },
+  likedByAvatarImg: {
+    width: '100%',
+    height: '100%',
+  },
+  likedByAvatarInitials: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: GOLD,
+  },
+  likedByText: {
+    fontSize: 12,
+    flex: 1,
+    flexWrap: 'wrap',
+    lineHeight: 16,
+  },
+  likedByBold: {
+    fontWeight: '700',
   },
   
   // Comments

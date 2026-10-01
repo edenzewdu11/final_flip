@@ -109,11 +109,15 @@ export default function WebsiteCoinScreen({ navigation }) {
 
   const allowsAirtime = (pkg) => pkg?.allowsAirtime === true || Number(pkg?.price) === 10;
 
-  // New function to handle custom amount
+  // Function to handle custom amount
   const handleCustomAmount = () => {
     const amount = parseFloat(customAmount);
-    if (!amount || amount < 5) {
-      Alert.alert('Invalid Amount', 'Please enter an amount of at least 5 ETB');
+    if (!amount || amount < 1) {
+      Alert.alert('Invalid Amount', 'Please enter an amount of at least 1 Birr');
+      return;
+    }
+    if (amount > 1000) {
+      Alert.alert('Invalid Amount', 'Maximum amount is 1000 Birr');
       return;
     }
     
@@ -286,6 +290,10 @@ export default function WebsiteCoinScreen({ navigation }) {
     return savings > 0 ? `Save ${savings}%` : '';
   };
 
+  const enteredAmount = parseInt(customAmount, 10) || 0;
+  const calculatedCoins = enteredAmount > 0 ? enteredAmount * 10 : 0;
+  const isButtonEnabled = enteredAmount >= 1 && enteredAmount <= 1000;
+
   return (
     <View style={[styles.container, { backgroundColor: colors.bg, paddingTop: insets.top }]}>
       {/* Header */}
@@ -300,16 +308,16 @@ export default function WebsiteCoinScreen({ navigation }) {
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.balanceBar}>
           <View style={styles.balanceBarIcon}>
-            <Ionicons name="wallet-outline" size={18} color="#B7E66A" />
+            <Ionicons name="wallet-outline" size={15} color="#B7E66A" />
           </View>
           <Text style={styles.balanceBarLabel}>YOUR BALANCE</Text>
           <Text style={styles.balanceBarAmount}>{userCoins.toLocaleString()} coins</Text>
         </View>
 
-        {/* Hero Section */}
+        {/* Hero Section - Minimized */}
         <View style={styles.heroSection}>
           <View style={styles.heroIcon}>
-            <Ionicons name="wallet" size={40} color="#10140E" />
+            <Ionicons name="wallet" size={20} color="#10140E" />
           </View>
           <Text style={styles.heroTitle}>Buy Coins</Text>
           <Text style={styles.heroSubtitle}>Choose your coin package</Text>
@@ -318,41 +326,65 @@ export default function WebsiteCoinScreen({ navigation }) {
         {/* Custom Amount Section */}
         <View style={styles.customSection}>
           <View style={styles.sectionHeader}>
-            <Ionicons name="cash-outline" size={16} color="#8fc441" />
+            <Ionicons name="link" size={14} color="#A3E635" />
             <Text style={styles.sectionTitle}>CHOOSE YOUR AMOUNT</Text>
           </View>
           
           <View style={styles.customAmountContainer}>
             <Text style={styles.amountLabel}>Amount</Text>
+
             <View style={styles.amountInputContainer}>
               <TextInput
-                style={[styles.amountInput, { color: colors.text, borderColor: colors.border }]}
+                style={styles.amountInput}
                 placeholder="e.g. 5"
-                placeholderTextColor="#666"
+                placeholderTextColor="#5B6854"
                 value={customAmount}
-                onChangeText={setCustomAmount}
+                onChangeText={(text) => {
+                  const sanitized = text.replace(/[^0-9]/g, '');
+                  setCustomAmount(sanitized);
+                }}
                 keyboardType="numeric"
               />
               <Text style={styles.currencyLabel}>Birr</Text>
             </View>
-            <Text style={styles.bonusNote}>
-              1-1000 Birr. Bonus coins come with the packages below.
-            </Text>
-            
+
+            <View style={styles.calculationContainer}>
+              {enteredAmount > 0 ? (
+                <Text style={styles.receiveText}>
+                  You will receive <Text style={styles.receiveAmount}>{calculatedCoins.toLocaleString()}</Text> Coins
+                </Text>
+              ) : (
+                <Text style={styles.bonusNote}>
+                  1-1000 Birr. Bonus coins come with the packages{'\n'}below.
+                </Text>
+              )}
+            </View>
+
             <TouchableOpacity
-              style={[styles.continueButton, (!customAmount || parseFloat(customAmount) < 5) && styles.continueButtonDisabled]}
+              style={[
+                styles.continueButton,
+                isButtonEnabled ? styles.continueButtonActive : styles.continueButtonDisabled,
+              ]}
               onPress={handleCustomAmount}
-              disabled={!customAmount || parseFloat(customAmount) < 5}
+              disabled={!isButtonEnabled}
+              activeOpacity={0.85}
             >
-              <Text style={styles.continueButtonText}>Continue to Buy</Text>
+              <Text
+                style={[
+                  styles.continueButtonText,
+                  isButtonEnabled ? styles.continueButtonTextActive : styles.continueButtonTextDisabled,
+                ]}
+              >
+                Continue to Buy
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* Or Pick Package Section */}
+        {/* Or Pick Package Section - Minimized Cards */}
         <View style={styles.packageSection}>
           <View style={styles.sectionHeader}>
-            <Ionicons name="pricetags" size={16} color="#8fc441" />
+            <Ionicons name="pricetags" size={14} color="#8fc441" />
             <Text style={styles.sectionTitle}>OR PICK A PACKAGE</Text>
           </View>
 
@@ -361,54 +393,56 @@ export default function WebsiteCoinScreen({ navigation }) {
             {coinPackages.map((pkg) => (
               <TouchableOpacity
                 key={pkg.id}
-                activeOpacity={0.92}
+                activeOpacity={0.88}
                 onPress={() => handlePackageSelect(pkg)}
                 style={[
                   styles.packageCard,
-                  { backgroundColor: colors.cardBg, borderColor: '#292E27' },
+                  { backgroundColor: colors.cardBg, borderColor: pkg.popular ? '#8fc441' : '#262626' },
                 ]}
               >
                 {pkg.popular && (
                   <View style={styles.popularBadge}>
-                    <Ionicons name="flame" size={12} color="#10140E" />
+                    <Ionicons name="flame" size={10} color="#10140E" />
                     <Text style={styles.popularText}>POPULAR</Text>
                   </View>
                 )}
 
-                <View style={styles.coinCardTop}>
+                <View style={styles.packageCardLeft}>
                   <View style={styles.coinIconCircle}>
-                    <Ionicons name="wallet" size={28} color="#10140E" />
+                    <Ionicons name="wallet" size={16} color="#10140E" />
                   </View>
-                  <Text style={styles.coinAmount}>{pkg.coins.toLocaleString()}</Text>
-                  <Text style={styles.coinLabel}>COINS</Text>
-                  {pkg.bonus > 0 && (
-                    <View style={styles.bonusBadge}>
-                      <Text style={styles.bonusText}>+{pkg.bonus} bonus included</Text>
+                  <View style={styles.packageCoinInfo}>
+                    <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 4 }}>
+                      <Text style={styles.coinAmount}>{pkg.coins.toLocaleString()}</Text>
+                      <Text style={styles.coinLabel}>COINS</Text>
                     </View>
-                  )}
+                    {pkg.bonus > 0 ? (
+                      <View style={styles.bonusBadge}>
+                        <Text style={styles.bonusText}>+{pkg.bonus} bonus</Text>
+                      </View>
+                    ) : (
+                      <Text style={styles.packageDesc} numberOfLines={1}>{pkg.description || 'Starter Pack'}</Text>
+                    )}
+                  </View>
                 </View>
 
-                <View style={styles.packagePrice}>
-                  <Text style={styles.priceAmount}>{pkg.price}</Text>
-                  <Text style={styles.priceLabel}>ETB</Text>
+                <View style={styles.packageCardRight}>
+                  <View style={styles.packagePrice}>
+                    <Text style={styles.priceAmount}>{pkg.price}</Text>
+                    <Text style={styles.priceLabel}>ETB</Text>
+                  </View>
+                  <View style={styles.buyCoinsButton}>
+                    <Ionicons name="cart-outline" size={13} color="#000" />
+                    <Text style={styles.buyCoinsButtonText}>Buy</Text>
+                  </View>
                 </View>
-
-                {/* Buy Coins button after each package */}
-                <TouchableOpacity
-                  style={styles.buyCoinsButton}
-                  onPress={() => handlePackageSelect(pkg)}
-                  activeOpacity={0.8}
-                >
-                  <Ionicons name="cart-outline" size={16} color="#000" />
-                  <Text style={styles.buyCoinsButtonText}>Buy Coins</Text>
-                </TouchableOpacity>
               </TouchableOpacity>
             ))}
           </View>
           
           <View style={styles.packageFooter}>
             <Text style={styles.packageFooterText}>Select a package</Text>
-            <Text style={styles.packageFooterSubtext}>Tap Buy Coins on any package above to continue</Text>
+            <Text style={styles.packageFooterSubtext}>Tap Buy on any package above to continue</Text>
           </View>
         </View>
       </ScrollView>
@@ -772,156 +806,150 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginHorizontal: 16,
-    marginTop: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 10,
+    marginTop: 8,
+    marginBottom: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
     backgroundColor: '#151A13',
     borderWidth: 1,
     borderColor: '#293325',
   },
   balanceBarIcon: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#26351D',
-    marginRight: 9,
+    marginRight: 8,
   },
   balanceBarLabel: {
     color: '#87917C',
     fontSize: 10,
     fontWeight: '800',
-    letterSpacing: 1,
+    letterSpacing: 0.8,
   },
   balanceBarAmount: {
     color: '#B7E66A',
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '800',
     marginLeft: 'auto',
   },
-  titleSection: {
-    paddingHorizontal: 16,
-    paddingTop: 24,
-    paddingBottom: 14,
-    alignItems: 'center',
-  },
-  mainTitle: {
-    color: '#F5F7F1',
-    fontSize: 27,
-    fontWeight: '900',
-    textAlign: 'center',
-    marginBottom: 5,
-  },
-  subtitle: {
-    color: '#B7E66A',
-    fontSize: 13,
-    textAlign: 'center',
-  },
   packagesGrid: {
-    paddingHorizontal: 16,
-    paddingBottom: 10,
+    gap: 8,
   },
   packageCard: {
     width: '100%',
-    minHeight: 268,
-    borderRadius: 18,
-    borderWidth: 1,
-    padding: 12,
-    marginBottom: 14,
-    position: 'relative',
-  },
-  coinCardTop: {
+    flexDirection: 'row',
     alignItems: 'center',
-    paddingTop: 16,
-    minHeight: 136,
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    position: 'relative',
+    backgroundColor: '#161616',
+    marginBottom: 8,
+  },
+  popularBadge: {
+    position: 'absolute',
+    top: -7,
+    right: 12,
+    zIndex: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 8,
+    backgroundColor: '#8fc441',
+  },
+  popularText: {
+    color: '#10140E',
+    fontSize: 8,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  packageCardLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
   },
   coinIconCircle: {
-    width: 62,
-    height: 62,
-    borderRadius: 31,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#B7E66A',
-    shadowColor: '#B7E66A',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.28,
-    shadowRadius: 9,
-    elevation: 5,
-    marginBottom: 10,
+    backgroundColor: '#8fc441',
+  },
+  packageCoinInfo: {
+    justifyContent: 'center',
   },
   coinAmount: {
-    color: '#F5F7F1',
-    fontSize: 29,
-    lineHeight: 32,
+    color: '#fff',
+    fontSize: 17,
     fontWeight: '900',
-    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
   },
   coinLabel: {
-    color: '#B7E66A',
-    fontSize: 11,
+    color: '#8fc441',
+    fontSize: 10,
     fontWeight: '800',
-    letterSpacing: 1,
-    marginTop: 2,
+    letterSpacing: 0.5,
   },
   bonusBadge: {
-    marginTop: 10,
-    paddingHorizontal: 9,
-    paddingVertical: 5,
-    borderRadius: 12,
+    marginTop: 2,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 5,
     backgroundColor: '#12362B',
     borderWidth: 1,
     borderColor: '#17765A',
+    alignSelf: 'flex-start',
   },
   bonusText: {
     color: '#47D3A0',
     fontSize: 9,
     fontWeight: '800',
   },
-  packageDivider: {
-    height: 1,
-    backgroundColor: '#292E27',
-    marginVertical: 10,
+  packageDesc: {
+    color: '#888',
+    fontSize: 11,
+    marginTop: 1,
+  },
+  packageCardRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
   packagePrice: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    justifyContent: 'center',
-    gap: 4,
-    marginTop: 8,
-    marginBottom: 4,
+    alignItems: 'flex-end',
   },
   priceAmount: {
     color: '#8fc441',
-    fontSize: 24,
+    fontSize: 16,
     fontWeight: '900',
   },
   priceLabel: {
     color: '#8fc441',
-    fontSize: 13,
+    fontSize: 9,
     fontWeight: '800',
   },
   buyCoinsButton: {
     backgroundColor: '#8fc441',
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    width: '100%',
-    marginTop: 10,
-    shadowColor: '#8fc441',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.35,
-    shadowRadius: 6,
-    elevation: 4,
+    gap: 4,
   },
   buyCoinsButtonText: {
     color: '#000',
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '800',
     letterSpacing: 0.3,
   },
@@ -1114,124 +1142,160 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
 
-  // New styles for enhanced UI
+  // Minimized styles for hero and custom amount
   heroSection: {
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 32,
-    marginBottom: 24,
+    paddingVertical: 8,
+    marginBottom: 8,
   },
   heroIcon: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: '#8fc441',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 4,
+    shadowColor: '#8fc441',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 3,
   },
   heroTitle: {
-    fontSize: 32,
+    fontSize: 19,
     fontWeight: '900',
     color: '#fff',
-    marginBottom: 8,
+    marginBottom: 2,
+    letterSpacing: -0.3,
   },
   heroSubtitle: {
-    fontSize: 16,
+    fontSize: 12,
     color: '#8fc441',
-    fontWeight: '500',
+    fontWeight: '600',
   },
 
   customSection: {
     marginHorizontal: 16,
-    marginBottom: 32,
+    marginBottom: 16,
   },
   packageSection: {
     marginHorizontal: 16,
-    marginBottom: 32,
+    marginBottom: 20,
   },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
-    gap: 8,
+    marginBottom: 8,
+    gap: 6,
   },
   sectionTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#8fc441',
-    letterSpacing: 0.5,
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#A3E635',
+    letterSpacing: 0.8,
   },
 
   customAmountContainer: {
-    backgroundColor: '#1a1a1a',
-    borderRadius: 16,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: '#333',
+    backgroundColor: '#121710',
+    borderRadius: 20,
+    padding: 16,
+    borderWidth: 1.5,
+    borderColor: '#3F5B22',
   },
   amountLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#fff',
-    marginBottom: 12,
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#BAC7B3',
+    textAlign: 'center',
+    marginBottom: 10,
   },
   amountInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#0a0a0a',
-    borderRadius: 12,
+    justifyContent: 'space-between',
+    backgroundColor: '#182015',
+    borderRadius: 14,
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#333',
+    height: 50,
   },
   amountInput: {
     flex: 1,
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#fff',
-  },
-  currencyLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#8fc441',
-  },
-  bonusNote: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 20,
-    lineHeight: 20,
-  },
-  continueButton: {
-    backgroundColor: '#8fc441',
-    borderRadius: 12,
-    paddingVertical: 16,
-    alignItems: 'center',
-  },
-  continueButtonDisabled: {
-    backgroundColor: '#333',
-  },
-  continueButtonText: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#0a0a0a',
+    color: '#FFFFFF',
+    paddingVertical: 0,
+  },
+  currencyLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#768570',
+    marginLeft: 8,
+  },
+  calculationContainer: {
+    minHeight: 46,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+  },
+  receiveText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#9EAEA0',
+    textAlign: 'center',
+  },
+  receiveAmount: {
+    fontSize: 20,
+    fontWeight: '900',
+    color: '#FFFFFF',
+  },
+  bonusNote: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#7D8C76',
+    textAlign: 'center',
+    lineHeight: 18,
+    maxWidth: 270,
+    alignSelf: 'center',
+  },
+  continueButton: {
+    width: '100%',
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  continueButtonActive: {
+    backgroundColor: '#8fc441',
+  },
+  continueButtonDisabled: {
+    backgroundColor: '#354725',
+  },
+  continueButtonText: {
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  continueButtonTextActive: {
+    color: '#0D1606',
+  },
+  continueButtonTextDisabled: {
+    color: '#131D0F',
   },
 
   packageFooter: {
     alignItems: 'center',
-    marginTop: 24,
-    paddingVertical: 16,
+    marginTop: 8,
+    paddingVertical: 8,
   },
   packageFooterText: {
-    fontSize: 16,
+    fontSize: 12,
     fontWeight: '600',
-    color: '#fff',
-    marginBottom: 4,
+    color: '#aaa',
+    marginBottom: 2,
   },
   packageFooterSubtext: {
-    fontSize: 14,
+    fontSize: 11,
     color: '#666',
   },
 });

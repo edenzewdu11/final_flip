@@ -26,12 +26,75 @@ const ITEM_HEIGHT = Math.round(ITEM_SIZE * 120 / 100); // Changed from 178 to 12
 const HERO_HEIGHT = Math.round(width * 56 / 100);
 
 // Explore modes shared with the website.
-const CATEGORIES = [
+const DEFAULT_CATEGORIES = [
   { id: 'all', label: 'All', icon: 'checkmark-circle', emoji: '✓', color: '#8fc441' },
   { id: 'dance', label: 'Dance', icon: 'musical-notes', emoji: '💃', color: '#FF6B6B' },
   { id: 'comedy', label: 'Comedy', icon: 'happy', emoji: '😂', color: '#FFD93D' },
   { id: 'music', label: 'Music', icon: 'musical-note', emoji: '🎵', color: '#6BCF7F' },
 ];
+
+const CATEGORY_META = {
+  all: { emoji: '✓', icon: 'checkmark-circle', color: '#8fc441' },
+  dance: { emoji: '💃', icon: 'musical-notes', color: '#FF6B6B' },
+  comedy: { emoji: '😂', icon: 'happy', color: '#FFD93D' },
+  music: { emoji: '🎵', icon: 'musical-note', color: '#6BCF7F' },
+  beauty: { emoji: '💄', icon: 'sparkles', color: '#EC4899' },
+  sports: { emoji: '⚽', icon: 'football', color: '#3B82F6' },
+  food: { emoji: '🍕', icon: 'restaurant', color: '#F97316' },
+  travel: { emoji: '✈️', icon: 'airplane', color: '#06B6D4' },
+  art: { emoji: '🎨', icon: 'color-palette', color: '#8B5CF6' },
+  gaming: { emoji: '🎮', icon: 'game-controller', color: '#10B981' },
+  fashion: { emoji: '👗', icon: 'shirt', color: '#F43F5E' },
+  education: { emoji: '📚', icon: 'book', color: '#EAB308' },
+  lifestyle: { emoji: '🌟', icon: 'star', color: '#8fc441' },
+  entertainment: { emoji: '🎬', icon: 'film', color: '#F59E0B' },
+  tech: { emoji: '💻', icon: 'hardware-chip', color: '#06B6D4' },
+};
+
+function deduplicateCategories(list) {
+  const seenIds = new Set();
+  const seenLabels = new Set();
+  const result = [];
+
+  // Always ensure 'All' is the very first category
+  result.push({
+    id: 'all',
+    label: 'All',
+    icon: 'checkmark-circle',
+    emoji: '✓',
+    color: '#8fc441',
+  });
+  seenIds.add('all');
+  seenLabels.add('all');
+
+  for (const cat of (list || [])) {
+    if (!cat) continue;
+    const rawId = String(cat.slug || cat.id || '').trim().toLowerCase();
+    const rawLabel = String(cat.label || cat.name || '').trim();
+    const labelKey = rawLabel.toLowerCase();
+
+    // Skip empty or 'all' since 'All' is already first
+    if (!rawId || rawId === 'all' || labelKey === 'all') continue;
+
+    if (!seenIds.has(rawId) && !seenLabels.has(labelKey)) {
+      seenIds.add(rawId);
+      seenLabels.add(labelKey);
+
+      const meta = CATEGORY_META[rawId] || {};
+      result.push({
+        id: cat.slug || cat.id || rawId,
+        label: cat.label || cat.name || rawLabel,
+        icon: cat.icon || meta.icon || 'pricetag',
+        emoji: cat.emoji || meta.emoji || '📌',
+        color: cat.color || meta.color || '#C8B56A',
+      });
+    }
+  }
+
+  return result;
+}
+
+const CATEGORIES = deduplicateCategories(DEFAULT_CATEGORIES);
 
 const TIME_RANGES = [
   { id: '24h', label: '24h' },
@@ -214,8 +277,8 @@ export default function ExploreScreen({ navigation, route }) {
   const { colors } = useTheme();
   const user = auth?.user ?? null;
 
-  // Explore state
-  const [activeCategory, setActiveCategory] = useState('trending');
+  // Explore state - start from 'all' by default
+  const [activeCategory, setActiveCategory] = useState('all');
   const [timeRange, setTimeRange] = useState('24h');
   const [videos, setVideos] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -299,35 +362,30 @@ export default function ExploreScreen({ navigation, route }) {
       .finally(() => setLoadingMore(false));
   }, [activeCategory, timeRange, videos.length, hasMore, loading, loadingMore, inSearchMode]);
   
-  // Fetch categories from API
+  // Fetch categories from API and deduplicate
   useEffect(() => {
     let cancelled = false;
     
     api.request('/categories/')
       .then(d => {
         if (!cancelled) {
-          const apiCategories = Array.isArray(d) ? d : [];
-          // Convert API categories to the format we need
-          const formattedCategories = apiCategories.map(cat => ({
-            id: cat.slug,
-            label: cat.name,
-            icon: cat.icon || 'pricetag',
-            emoji: cat.emoji || '📌'
-          }));
-          // Add 'all' and 'trending' at the beginning
-          setCategories([
-            { id: 'all', label: 'All', icon: 'checkmark-circle', emoji: '✓', color: '#8fc441' },
-            { id: 'dance', label: 'Dance', icon: 'musical-notes', emoji: '💃', color: '#FF6B6B' },
-            { id: 'comedy', label: 'Comedy', icon: 'happy', emoji: '😂', color: '#FFD93D' },
-            { id: 'music', label: 'Music', icon: 'musical-note', emoji: '🎵', color: '#6BCF7F' },
-            ...formattedCategories
-          ]);
+          const apiCategories = Array.isArray(d) ? d : (d?.results || []);
+          const combined = [
+            ...DEFAULT_CATEGORIES,
+            ...apiCategories.map(cat => ({
+              id: cat.slug || String(cat.id),
+              label: cat.name,
+              icon: cat.icon,
+              emoji: cat.emoji,
+            }))
+          ];
+          setCategories(deduplicateCategories(combined));
         }
       })
-      .catch(() => {
+      .catch((err) => {
+        console.log('[ExploreScreen] Failed to fetch categories:', err);
         if (!cancelled) {
-          // Keep default categories if API fails
-          setCategories(CATEGORIES);
+          setCategories(deduplicateCategories(DEFAULT_CATEGORIES));
         }
       });
     
@@ -691,7 +749,7 @@ export default function ExploreScreen({ navigation, route }) {
             {!loading && !hashtagView && videos.length > 0 && (
               <Text style={styles.showingText}>
                 Showing <Text style={styles.showingBold}>
-                  {activeCategory === 'all' ? 'all categories' : activeCategory}
+                  {activeCategory === 'all' ? 'all categories' : (categories.find(c => c.id === activeCategory)?.label || activeCategory)}
                 </Text> from the last <Text style={styles.showingBold}>
                   {timeRange === '24h' ? '24 hours' : timeRange === '7d' ? '7 days' : '30 days'}
                 </Text>

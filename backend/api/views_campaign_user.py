@@ -638,6 +638,7 @@ def global_leaderboard(request):
 
     period = request.GET.get('period', 'daily')
     master_campaign_id = request.GET.get('master_campaign_id')
+    campaign_id = request.GET.get('campaign_id')
     now = timezone.now()
 
     # Get master campaign if specified
@@ -648,6 +649,20 @@ def global_leaderboard(request):
         except MasterCampaign.DoesNotExist:
             return Response({'error': 'Master campaign not found'}, status=404)
 
+    target_campaign = None
+    if campaign_id:
+        try:
+            target_campaign = Campaign.objects.get(id=campaign_id)
+        except Campaign.DoesNotExist:
+            return Response({'error': 'Campaign not found'}, status=404)
+
+    # Get list of available campaigns for campaign selector in UI
+    available_campaigns = list(
+        Campaign.objects.exclude(status='cancelled')
+        .order_by('-created_at')
+        .values('id', 'title', 'status', 'campaign_type', 'prize_title')[:30]
+    )
+
     # ── DAILY ──────────────────────────────────────────────────────────────────
     if period == 'daily':
         date_str = request.GET.get('date', now.strftime('%Y-%m-%d'))
@@ -656,8 +671,10 @@ def global_leaderboard(request):
         except ValueError:
             target_date = now.date()
 
-        # Get sub-campaigns (daily campaigns) for the master campaign
-        if master_campaign:
+        # Get sub-campaigns (daily campaigns) for the master campaign or specific campaign
+        if target_campaign:
+            campaigns = [target_campaign]
+        elif master_campaign:
             campaigns = Campaign.objects.filter(
                 master_campaign=master_campaign,
                 campaign_type='daily'
@@ -668,6 +685,7 @@ def global_leaderboard(request):
             ).exclude(status='cancelled').order_by('-created_at')
 
         result = []
+        direct_leaders = []
 
         for campaign in campaigns:
             posts_qs = PostScore.objects.filter(
@@ -677,6 +695,14 @@ def global_leaderboard(request):
 
             user_ids = list(posts_qs.values_list('user_id', flat=True).distinct())
             if not user_ids:
+                if target_campaign:
+                    result.append({
+                        'campaign_id': campaign.id,
+                        'campaign_title': campaign.title,
+                        'campaign_status': campaign.status,
+                        'campaign_date': campaign.start_date.strftime('%Y-%m-%d') if campaign.start_date else None,
+                        'leaders': [],
+                    })
                 continue
 
             entries = []
@@ -698,6 +724,9 @@ def global_leaderboard(request):
             for i, e in enumerate(entries):
                 e['rank'] = i + 1
 
+            if target_campaign:
+                direct_leaders = entries
+
             result.append({
                 'campaign_id': campaign.id,
                 'campaign_title': campaign.title,
@@ -711,6 +740,10 @@ def global_leaderboard(request):
             'date': str(target_date),
             'master_campaign_id': master_campaign_id,
             'master_campaign_title': master_campaign.title if master_campaign else None,
+            'campaign_id': target_campaign.id if target_campaign else None,
+            'campaign_title': target_campaign.title if target_campaign else None,
+            'available_campaigns': available_campaigns,
+            'leaders': direct_leaders[:50] if target_campaign else [],
             'campaigns': result
         })
 
@@ -720,7 +753,9 @@ def global_leaderboard(request):
         week_start = week_start.replace(hour=0, minute=0, second=0, microsecond=0)
 
         # Get campaigns for the week
-        if master_campaign:
+        if target_campaign:
+            campaigns = [target_campaign]
+        elif master_campaign:
             campaigns = Campaign.objects.filter(
                 master_campaign=master_campaign,
                 campaign_type='daily',
@@ -734,7 +769,7 @@ def global_leaderboard(request):
                 start_date__lte=now
             ).exclude(status='cancelled')
 
-        # Aggregate scores from all daily campaigns in this week
+        # Aggregate scores from campaigns in this week
         campaign_ids = list(campaigns.values_list('id', flat=True))
         posts_qs = PostScore.objects.filter(
             campaign_id__in=campaign_ids,
@@ -772,6 +807,9 @@ def global_leaderboard(request):
             'week_start': week_start.strftime('%Y-%m-%d'),
             'master_campaign_id': master_campaign_id,
             'master_campaign_title': master_campaign.title if master_campaign else None,
+            'campaign_id': target_campaign.id if target_campaign else None,
+            'campaign_title': target_campaign.title if target_campaign else None,
+            'available_campaigns': available_campaigns,
             'leaders': entries[:50]
         })
 
@@ -780,7 +818,9 @@ def global_leaderboard(request):
         month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
         # Get campaigns for the month
-        if master_campaign:
+        if target_campaign:
+            campaigns = [target_campaign]
+        elif master_campaign:
             campaigns = Campaign.objects.filter(
                 master_campaign=master_campaign,
                 campaign_type='weekly',
@@ -794,7 +834,7 @@ def global_leaderboard(request):
                 start_date__lte=now
             ).exclude(status='cancelled')
 
-        # Aggregate scores from all weekly campaigns in this month
+        # Aggregate scores from campaigns in this month
         campaign_ids = list(campaigns.values_list('id', flat=True))
         posts_qs = PostScore.objects.filter(
             campaign_id__in=campaign_ids,
@@ -832,6 +872,9 @@ def global_leaderboard(request):
             'month_start': month_start.strftime('%Y-%m-%d'),
             'master_campaign_id': master_campaign_id,
             'master_campaign_title': master_campaign.title if master_campaign else None,
+            'campaign_id': target_campaign.id if target_campaign else None,
+            'campaign_title': target_campaign.title if target_campaign else None,
+            'available_campaigns': available_campaigns,
             'leaders': entries[:50]
         })
 
@@ -841,7 +884,9 @@ def global_leaderboard(request):
         grand_start = now - timedelta(days=180)  # 6 months ago
 
         # Get campaigns for the 6-month period
-        if master_campaign:
+        if target_campaign:
+            campaigns = [target_campaign]
+        elif master_campaign:
             campaigns = Campaign.objects.filter(
                 master_campaign=master_campaign,
                 campaign_type='weekly',
@@ -855,7 +900,7 @@ def global_leaderboard(request):
                 start_date__lte=now
             ).exclude(status='cancelled')
 
-        # Aggregate scores from all weekly campaigns
+        # Aggregate scores from campaigns
         campaign_ids = list(campaigns.values_list('id', flat=True))
         posts_qs = PostScore.objects.filter(
             campaign_id__in=campaign_ids,
@@ -893,6 +938,9 @@ def global_leaderboard(request):
             'period_start': grand_start.strftime('%Y-%m-%d'),
             'master_campaign_id': master_campaign_id,
             'master_campaign_title': master_campaign.title if master_campaign else None,
+            'campaign_id': target_campaign.id if target_campaign else None,
+            'campaign_title': target_campaign.title if target_campaign else None,
+            'available_campaigns': available_campaigns,
             'leaders': entries[:100]
         })
 

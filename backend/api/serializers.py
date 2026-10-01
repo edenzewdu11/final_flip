@@ -165,6 +165,7 @@ class ReelSerializer(serializers.ModelSerializer):
     hashtags_list = serializers.SerializerMethodField()
     is_liked = serializers.SerializerMethodField()
     is_saved = serializers.SerializerMethodField()
+    liked_by = serializers.SerializerMethodField()
     image = serializers.SerializerMethodField()
     media = serializers.SerializerMethodField()
     recent_comments = serializers.SerializerMethodField()
@@ -205,7 +206,7 @@ class ReelSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Reel
-        fields = ['id', 'user', 'image', 'media', 'thumbnail', 'blurhash', 'duration', 'processed', 'caption', 'hashtags', 'hashtags_list', 'overlay_text', 'votes', 'view_count', 'comment_count', 'shares', 'gift_count', 'created_at', 'is_liked', 'is_saved', 'recent_comments', 'is_campaign_post', 'campaign_id', 'campaign_title', 'category', 'category_name', 'category_slug', 'is_boosted', 'boost_ends_at', 'audio_file', 'audio_volume_level', 'original_volume_level']
+        fields = ['id', 'user', 'image', 'media', 'thumbnail', 'blurhash', 'duration', 'processed', 'caption', 'hashtags', 'hashtags_list', 'overlay_text', 'votes', 'view_count', 'comment_count', 'shares', 'gift_count', 'created_at', 'is_liked', 'is_saved', 'liked_by', 'recent_comments', 'is_campaign_post', 'campaign_id', 'campaign_title', 'category', 'category_name', 'category_slug', 'is_boosted', 'boost_ends_at', 'audio_file', 'audio_volume_level', 'original_volume_level']
     
     def _build_url(self, field, request):
         """Build absolute URL for a file field, handling both local and Cloudinary storage."""
@@ -314,6 +315,35 @@ class ReelSerializer(serializers.ModelSerializer):
         from .models import Comment
         recent_comments = Comment.objects.filter(reel=obj).select_related('user').order_by('-created_at')[:3]
         return CommentSerializer(recent_comments, many=True).data
+
+    def get_liked_by(self, obj):
+        try:
+            from .models import Vote
+            from django.conf import settings
+            votes = Vote.objects.filter(reel=obj).select_related('user', 'user__profile').order_by('-created_at')[:2]
+            media_url = getattr(settings, 'MEDIA_URL', '')
+            results = []
+            for v in votes:
+                u = v.user
+                photo = None
+                try:
+                    pf = u.profile.profile_photo
+                    if pf and pf.name:
+                        if pf.name.startswith('http'):
+                            photo = pf.name
+                        else:
+                            photo = f"{media_url}{pf.name}"
+                except Exception:
+                    pass
+                results.append({
+                    'id': u.id,
+                    'username': u.username,
+                    'full_name': (u.first_name + ' ' + u.last_name).strip() or u.username,
+                    'profile_photo': photo
+                })
+            return results
+        except Exception:
+            return []
 
 class CommentSerializer(serializers.ModelSerializer):
     user = UserSerializer(read_only=True)
