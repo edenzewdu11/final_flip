@@ -1,0 +1,1086 @@
+import { useState, useEffect, useRef, useCallback, memo } from 'react';
+import {
+  View, Text, StyleSheet, FlatList, TouchableOpacity, TouchableWithoutFeedback,
+  Image, TextInput, ActivityIndicator, KeyboardAvoidingView, Platform, Modal,
+  Alert, ScrollView, StatusBar, Pressable,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
+import * as ImagePicker from 'expo-image-picker';
+import {
+  useAudioPlayer, useAudioPlayerStatus,
+  useAudioRecorder, useAudioRecorderState, RecordingPresets,
+  requestRecordingPermissionsAsync, setAudioModeAsync,
+} from 'expo-audio';
+import { useAuth } from '../../contexts/AuthContext';
+import { useTheme } from '../../contexts/ThemeContext';
+import api from '../../api';
+import config from '../../config';
+
+const GOLD = '#8fc441';
+const BG = '#0D0D0D';
+const CARD = '#1A1A1A';
+const BORDER = '#262626';
+const SUB = '#888';
+const BASE = config.API_BASE_URL.replace('/api', '');
+const mediaUrl = (url) => {
+  if (!url) return null;
+  if (url.startsWith('http')) return url;
+  return `${BASE}${url}`;
+};
+
+function timeAgo(d) {
+  if (!d) return '';
+  const s = (Date.now() - new Date(d)) / 1000;
+  if (s < 60) return `${Math.floor(s)}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h`;
+  return `${Math.floor(s / 86400)}d`;
+}
+
+function clockTime(iso) {
+  if (!iso) return '';
+  return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function formatDuration(seconds) {
+  const total = Math.max(0, Math.round(seconds || 0));
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+// ─── Avatar ───────────────────────────────────────────────────────────────────
+const Avatar = memo(function Avatar({ uri, size = 44, name = '' }) {
+  const { colors } = useTheme();
+  const [err, setErr] = useState(false);
+  const u = uri ? mediaUrl(uri) : null;
+  if (u && !err) {
+    return (
+      <Image
+        source={{ uri: u }}
+        style={{ width: size, height: size, borderRadius: size / 2 }}
+        onError={() => setErr(true)}
+      />
+    );
+  }
+  return (
+    <View style={{
+      width: size, height: size, borderRadius: size / 2,
+      backgroundColor: colors.primary, justifyContent: 'center', alignItems: 'center',
+    }}>
+      <Text style={{ color: '#000', fontWeight: '700', fontSize: size * 0.38 }}>
+        {(name || '?')[0].toUpperCase()}
+      </Text>
+    </View>
+  );
+});
+
+// ─── New Chat Modal ────────────────────────────────────────────────────────────
+function NewChatModal({ onClose, onSelectUser }) {
+  const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
+  const [q, setQ] = useState('');
+  const [results, setResults] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!q.trim()) { setResults([]); return; }
+    let cancelled = false;
+    setLoading(true);
+    const t = setTimeout(async () => {
+      try {
+        const data = await api.request(`/messages/users/search/?q=${encodeURIComponent(q.trim())}`);
+        if (!cancelled) setResults(Array.isArray(data) ? data : []);
+      } catch { if (!cancelled) setResults([]); }
+      finally { if (!cancelled) setLoading(false); }
+    }, 250);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [q]);
+
+  return (
+    <Modal visible animationType="slide" transparent onRequestClose={onClose}>
+      <TouchableWithoutFeedback onPress={onClose}>
+        <View style={styles.modalOverlay} />
+      </TouchableWithoutFeedback>
+      <View style={[styles.newChatSheet, { backgroundColor: colors.cardBg, paddingBottom: insets.bottom + 8 }]}>
+        {/* Handle */}
+        <View style={styles.sheetHandle} />
+        <View style={styles.newChatHeader}>
+          <Text style={[styles.newChatTitle, { color: colors.text }]}>New Message</Text>
+          <TouchableOpacity onPress={onClose} style={{ padding: 4 }}>
+            <Ionicons name="close" size={22} color={colors.textSecondary} />
+          </TouchableOpacity>
+        </View>
+        {/* Search input */}
+        <View style={[styles.searchRow, { backgroundColor: colors.bg, borderColor: colors.border }]}>
+          <Ionicons name="search" size={16} color={colors.textSecondary} style={{ marginRight: 8 }} />
+          <TextInput
+            style={[styles.searchInput, { color: colors.text }]}
+            value={q}
+            onChangeText={setQ}
+            placeholder="Search users..."
+            placeholderTextColor={colors.textSecondary}
+            autoFocus
+            returnKeyType="search"
+          />
+          {q.length > 0 && (
+            <TouchableOpacity onPress={() => setQ('')}>
+              <Ionicons name="close-circle" size={16} color={colors.textSecondary} />
+            </TouchableOpacity>
+          )}
+        </View>
+        {/* Results */}
+        <ScrollView style={{ flex: 1 }} keyboardShouldPersistTaps="handled">
+          {loading && (
+            <View style={{ padding: 24, alignItems: 'center' }}>
+              <ActivityIndicator color={colors.primary} />
+            </View>
+          )}
+          {!loading && q.trim() && results.length === 0 && (
+            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No users found</Text>
+          )}
+          {!loading && !q.trim() && (
+            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>Start typing to search users</Text>
+          )}
+          {results.map((u) => (
+            <TouchableOpacity
+              key={u.id}
+              style={[styles.userRow, { borderBottomColor: colors.border }]}
+              onPress={() => onSelectUser(u)}
+            >
+              <Avatar uri={u.profile_photo} size={42} name={u.username} />
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <Text style={[styles.userName, { color: colors.text }]}>{u.username}</Text>
+                {(u.first_name || u.last_name) && (
+                  <Text style={[styles.userSub, { color: colors.textSecondary }]}>{u.first_name} {u.last_name}</Text>
+                )}
+              </View>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
+    </Modal>
+  );
+}
+
+// ─── Voice message player ───────────────────────────────────────────────────────
+function VoiceMessage({ uri, duration, own }) {
+  const player = useAudioPlayer(uri);
+  const status = useAudioPlayerStatus(player);
+  const total = status.duration || duration || 0;
+  const current = status.currentTime || 0;
+  const progress = total > 0 ? Math.min(current / total, 1) : 0;
+
+  const toggle = () => {
+    if (status.playing) {
+      player.pause();
+      return;
+    }
+    if (total > 0 && current >= total - 0.05) player.seekTo(0);
+    player.play();
+  };
+
+  return (
+    <View style={[styles.voiceRow, own ? styles.voiceRowMine : styles.voiceRowOther]}>
+      <TouchableOpacity onPress={toggle} style={styles.voicePlayBtn}>
+        <Ionicons name={status.playing ? 'pause' : 'play'} size={16} color={own ? '#000' : '#fff'} />
+      </TouchableOpacity>
+      <View style={styles.voiceTrack}>
+        <View style={[styles.voiceProgress, { width: `${progress * 100}%`, backgroundColor: own ? 'rgba(0,0,0,0.55)' : GOLD }]} />
+      </View>
+      <Text style={[styles.voiceDuration, { color: own ? 'rgba(0,0,0,0.7)' : SUB }]}>
+        {formatDuration(status.playing ? total - current : total)}
+      </Text>
+    </View>
+  );
+}
+
+// ─── Message Bubble ────────────────────────────────────────────────────────────
+const MessageBubble = memo(function MessageBubble({ msg, onEdit, onDelete, navigation }) {
+  const { colors } = useTheme();
+  const own = msg.is_own;
+
+  const handleLongPress = () => {
+    const opts = [
+      { text: 'Copy', onPress: () => handleCopy(msg.text) },
+      { text: 'Reply', onPress: () => handleReply(msg) },
+    ];
+    if (own) {
+      opts.push({ text: 'Edit', onPress: () => onEdit(msg) });
+      opts.push({ text: 'Delete', onPress: () => onDelete(msg) });
+    }
+    opts.push({ text: 'Cancel', style: 'cancel' });
+    Alert.alert('Message options', undefined, opts);
+  };
+
+  const handleReelPress = () => {
+    console.log('=== HANDLE REEL PRESS CALLED ===');
+    console.log('handleReelPress called, msg:', msg);
+    console.log('msg.text:', msg.text);
+    
+    // Parse reel/post ID from text message (feed shares tag [POST_ID:x], reels shares tag [REEL_ID:x])
+    const reelIdMatch = msg.text && msg.text.match(/\[(?:REEL_ID|POST_ID):(\d+)\]/);
+    if (reelIdMatch) {
+      const reelId = parseInt(reelIdMatch[1]);
+      console.log('Found reel ID:', reelId);
+      console.log('About to navigate to ReelsDetail with initialVideoId:', reelId);
+      try {
+        // Navigate to the ReelsDetail with the specific reel
+        navigation.navigate('ReelsDetail', { initialVideoId: reelId });
+        console.log('Navigation call completed');
+      } catch (error) {
+        console.log('Navigation error:', error);
+      }
+    } else {
+      console.log('No reel ID found in message text');
+    }
+  };
+
+  const bubbleStyle = own
+    ? [styles.bubble, styles.bubbleMine]
+    : [styles.bubble, styles.bubbleOther];
+
+  const textColor = own ? colors.text : '#fff';
+
+  const renderContent = () => {
+    if (msg.is_deleted) {
+      return (
+        <View style={bubbleStyle}>
+          <Text style={{ color: own ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)', fontStyle: 'italic', fontSize: 14 }}>
+            Message deleted
+          </Text>
+        </View>
+      );
+    }
+    if (msg.media_type === 'image' && msg.media_url) {
+      return (
+        <View>
+          <Image
+            source={{ uri: msg.media_url }}
+            style={styles.msgImage}
+            resizeMode="cover"
+          />
+          {!!msg.text && (
+            <View style={[bubbleStyle, { marginTop: 4 }]}>
+              <Text style={{ color: textColor, fontSize: 14, lineHeight: 19 }}>{msg.text}</Text>
+            </View>
+          )}
+        </View>
+      );
+    }
+
+    if (msg.media_type === 'audio' && msg.media_url) {
+      return (
+        <View style={bubbleStyle}>
+          <VoiceMessage uri={msg.media_url} duration={msg.media_duration} own={own} />
+        </View>
+      );
+    }
+    
+    // Handle messages with embedded reel/post ID (shared reels or feed posts)
+    const reelIdMatch = msg.text && msg.text.match(/\[(?:REEL_ID|POST_ID):(\d+)\]/);
+    if (reelIdMatch) {
+      const cleanText = msg.text.replace(/\[(?:REEL_ID|POST_ID):\d+\]/, '').replace(/\n+$/, '').trim();
+      const reelTextColor = '#fff';
+      return (
+        <TouchableOpacity 
+          onPress={handleReelPress}
+          activeOpacity={0.7}
+          style={[bubbleStyle, { paddingVertical: 6, paddingHorizontal: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)' }]}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Ionicons name="film-outline" size={16} color={reelTextColor} />
+            <Text style={{ color: reelTextColor, fontSize: 13, fontWeight: '600' }}>
+              🎬 Tap to watch
+            </Text>
+          </View>
+          {!!cleanText && (
+            <Text style={{ color: reelTextColor, fontSize: 11, marginTop: 2, opacity: 0.8 }} numberOfLines={1}>
+              {cleanText}
+            </Text>
+          )}
+        </TouchableOpacity>
+      );
+    }
+    
+    return (
+      <View style={bubbleStyle}>
+        <Text style={{ color: textColor, fontSize: 14, lineHeight: 19, flexWrap: 'wrap' }}>
+          {msg.text}
+        </Text>
+      </View>
+    );
+  };
+
+  return (
+    <Pressable
+      onLongPress={handleLongPress}
+      style={[styles.msgRow, own && styles.msgRowMine]}
+    >
+      {!own && (
+        <Avatar uri={msg.sender?.profile_photo} size={26} name={msg.sender?.username} />
+      )}
+      <View style={{ maxWidth: '75%' }}>
+        {renderContent()}
+        <View style={[styles.msgMeta, own && { alignItems: 'flex-end' }]}>
+          {msg.edited_at && !msg.is_deleted && (
+            <Text style={styles.editedTag}>Edited · </Text>
+          )}
+          <Text style={styles.msgTime}>{clockTime(msg.created_at)}</Text>
+        </View>
+      </View>
+    </Pressable>
+  );
+});
+
+// ─── Thread / Chat View ────────────────────────────────────────────────────────
+function ChatView({ conversation, onBack, userId, navigation }) {
+  const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
+  const [messages, setMessages] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [text, setText] = useState('');
+  const [sending, setSending] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [attachment, setAttachment] = useState(null); // { uri, type, name, kind: 'image'|'audio', duration }
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordSeconds, setRecordSeconds] = useState(0);
+  const flatRef = useRef(null);
+  const pendingRef = useRef(0);
+  const recordTimerRef = useRef(null);
+  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const convId = conversation.id;
+  const other = conversation.other_user;
+
+  const fetchMessages = useCallback(async (silent = false) => {
+    try {
+      if (!silent) setLoading(true);
+      const data = await api.request(`/messages/conversations/${convId}/messages/`);
+      const arr = Array.isArray(data) ? data : [];
+      setMessages((prev) => {
+        if (pendingRef.current > 0 && prev.length > arr.length) {
+          const optimistic = prev.slice(arr.length);
+          return [...arr, ...optimistic];
+        }
+        return arr;
+      });
+      // Mark as read
+      api.request(`/messages/conversations/${convId}/read/`, { method: 'POST' }).catch(() => {});
+    } catch {}
+    finally { if (!silent) setLoading(false); }
+  }, [convId]);
+
+  useEffect(() => { fetchMessages(false); }, [fetchMessages]);
+
+  // Poll every 30s
+  useEffect(() => {
+    if (!convId) return;
+    const id = setInterval(() => fetchMessages(true), 30000);
+    return () => clearInterval(id);
+  }, [convId, fetchMessages]);
+
+  // Auto-scroll to bottom
+  useEffect(() => {
+    if (!loading && messages.length > 0) {
+      setTimeout(() => flatRef.current?.scrollToEnd({ animated: false }), 100);
+    }
+  }, [messages.length, loading]);
+
+  // Cancel edit mode
+  const cancelEdit = () => { setEditing(null); setText(''); };
+
+  // Pick image from library
+  const pickImage = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'Allow photo access to send images.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.8,
+    });
+    if (!result.canceled && result.assets?.[0]) {
+      const asset = result.assets[0];
+      setAttachment({ uri: asset.uri, type: 'image/jpeg', name: `photo_${Date.now()}.jpg`, kind: 'image' });
+    }
+  };
+
+  const clearAttachment = () => setAttachment(null);
+
+  // Voice recording
+  const startRecording = async () => {
+    try {
+      const perm = await requestRecordingPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert('Permission needed', 'Allow microphone access to record voice messages.');
+        return;
+      }
+      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+      await recorder.prepareToRecordAsync();
+      recorder.record();
+      setIsRecording(true);
+      setRecordSeconds(0);
+      recordTimerRef.current = setInterval(() => setRecordSeconds(s => s + 1), 1000);
+    } catch {
+      Alert.alert('Error', 'Failed to start recording. Check microphone permissions.');
+    }
+  };
+
+  const stopRecordTimer = () => {
+    if (recordTimerRef.current) {
+      clearInterval(recordTimerRef.current);
+      recordTimerRef.current = null;
+    }
+  };
+
+  const finishRecording = async () => {
+    const durationSec = recorder.currentTime || recordSeconds;
+    stopRecordTimer();
+    setIsRecording(false);
+    try {
+      await recorder.stop();
+      if (recorder.uri) {
+        setAttachment({
+          uri: recorder.uri,
+          type: 'audio/m4a',
+          name: `voice_${Date.now()}.m4a`,
+          kind: 'audio',
+          duration: durationSec,
+        });
+      }
+    } catch {
+      Alert.alert('Error', 'Failed to save the recording.');
+    }
+  };
+
+  const cancelRecording = async () => {
+    stopRecordTimer();
+    setIsRecording(false);
+    try { await recorder.stop(); } catch {}
+  };
+
+  useEffect(() => () => stopRecordTimer(), []);
+
+  const send = async () => {
+    const trimmed = text.trim();
+
+    // Edit mode
+    if (editing) {
+      if (!trimmed) return;
+      setSending(true);
+      try {
+        await api.request(`/messages/${editing.id}/`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: trimmed }),
+        });
+        setMessages(prev => prev.map(m =>
+          m.id === editing.id
+            ? { ...m, text: trimmed, edited_at: new Date().toISOString() }
+            : m,
+        ));
+        setEditing(null);
+        setText('');
+      } catch { Alert.alert('Error', 'Failed to edit message.'); }
+      finally { setSending(false); }
+      return;
+    }
+
+    // With image or voice attachment
+    if (attachment) {
+      setSending(true);
+      const att = attachment;
+      setAttachment(null);
+      setText('');
+      try {
+        pendingRef.current += 1;
+        const formData = new FormData();
+        formData.append('media', { uri: att.uri, type: att.type, name: att.name });
+        formData.append('media_type', att.kind === 'audio' ? 'audio' : 'image');
+        if (att.kind === 'audio' && att.duration) formData.append('media_duration', String(att.duration));
+        if (trimmed) formData.append('text', trimmed);
+        const sent = await api.request(`/messages/conversations/${convId}/messages/`, {
+          method: 'POST',
+          body: formData,
+        });
+        setMessages(prev => [...prev, sent]);
+        flatRef.current?.scrollToEnd({ animated: true });
+      } catch { Alert.alert('Error', `Failed to send ${att.kind === 'audio' ? 'voice message' : 'image'}.`); }
+      finally { setSending(false); pendingRef.current -= 1; }
+      return;
+    }
+
+    // Plain text
+    if (!trimmed) return;
+    const optimistic = {
+      id: `opt_${Date.now()}`, text: trimmed, is_own: true,
+      sender: { id: userId }, created_at: new Date().toISOString(),
+    };
+    setMessages(prev => [...prev, optimistic]);
+    setText('');
+    setSending(true);
+    try {
+      pendingRef.current += 1;
+      const sent = await api.request(`/messages/conversations/${convId}/messages/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: trimmed }),
+      });
+      setMessages(prev => prev.map(m => m.id === optimistic.id ? sent : m));
+      flatRef.current?.scrollToEnd({ animated: true });
+    } catch {
+      setMessages(prev => prev.filter(m => m.id !== optimistic.id));
+      Alert.alert('Error', 'Failed to send message.');
+    } finally { setSending(false); pendingRef.current -= 1; }
+  };
+
+  const handleDelete = async (msg) => {
+    try {
+      await api.request(`/messages/${msg.id}/`, { method: 'DELETE' });
+      setMessages(prev => prev.map(m =>
+        m.id === msg.id ? { ...m, is_deleted: true, text: '' } : m,
+      ));
+    } catch { Alert.alert('Error', 'Failed to delete message.'); }
+  };
+
+  const handleEdit = (msg) => {
+    setEditing(msg);
+    setText(msg.text || '');
+  };
+
+  const renderMsg = useCallback(({ item }) => (
+    <MessageBubble
+      msg={item}
+      onEdit={handleEdit}
+      onDelete={handleDelete}
+      navigation={navigation}
+    />
+  ), [handleEdit, handleDelete, navigation]);
+
+  return (
+    <KeyboardAvoidingView
+      style={{ flex: 1, backgroundColor: colors.bg }}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+    >
+      {/* Header */}
+      <View style={[styles.chatHeader, { paddingTop: insets.top, borderBottomColor: colors.border, backgroundColor: colors.cardBg }]}>
+        <TouchableOpacity onPress={onBack} style={{ padding: 4, marginRight: 4 }}>
+          <Ionicons name="chevron-back" size={24} color={colors.primary} />
+        </TouchableOpacity>
+        <Avatar uri={other?.profile_photo} size={36} name={other?.username} />
+        <View style={{ flex: 1, marginLeft: 10 }}>
+          <Text style={[styles.chatName, { color: colors.text }]} numberOfLines={1}>{other?.username || 'Unknown'}</Text>
+          {(other?.first_name || other?.last_name) ? (
+            <Text style={[styles.chatSub, { color: colors.textSecondary }]} numberOfLines={1}>{other.first_name} {other.last_name}</Text>
+          ) : null}
+        </View>
+        <TouchableOpacity
+          onPress={() => navigation.navigate('ProfileStack', { userId: other?.id })}
+          style={{ padding: 6 }}
+        >
+          <Ionicons name="person-outline" size={20} color={colors.primary} />
+        </TouchableOpacity>
+      </View>
+
+      {/* Messages */}
+      {loading ? (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <ActivityIndicator color={colors.primary} size="large" />
+        </View>
+      ) : (
+        <FlatList
+          ref={flatRef}
+          data={messages}
+          keyExtractor={m => String(m.id)}
+          renderItem={renderMsg}
+          style={{ flex: 1 }}
+          contentContainerStyle={{ padding: 12, gap: 6 }}
+          ListEmptyComponent={
+            <View style={{ alignItems: 'center', marginTop: 60 }}>
+              <Ionicons name="chatbubbles-outline" size={48} color={colors.textSecondary} />
+              <Text style={{ color: colors.textSecondary, marginTop: 12, fontSize: 14 }}>
+                No messages yet. Say hello!
+              </Text>
+            </View>
+          }
+          removeClippedSubviews
+          maxToRenderPerBatch={20}
+        />
+      )}
+
+      {/* Attachment preview */}
+      {attachment && (
+        <View style={[styles.attachPreview, { backgroundColor: colors.cardBg, borderTopColor: colors.border }]}>
+          {attachment.kind === 'audio' ? (
+            <View style={[styles.attachThumb, { justifyContent: 'center', alignItems: 'center' }]}>
+              <Ionicons name="mic" size={22} color={GOLD} />
+            </View>
+          ) : (
+            <Image source={{ uri: attachment.uri }} style={styles.attachThumb} />
+          )}
+          <Text style={{ color: colors.text, flex: 1, marginLeft: 10, fontSize: 13 }} numberOfLines={1}>
+            {attachment.kind === 'audio' ? `Voice message · ${formatDuration(attachment.duration)}` : attachment.name}
+          </Text>
+          <TouchableOpacity onPress={clearAttachment} style={{ padding: 4 }}>
+            <Ionicons name="close-circle" size={20} color={colors.textSecondary} />
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Edit banner */}
+      {editing && (
+        <View style={[styles.editBanner, { backgroundColor: colors.cardBg, borderTopColor: colors.border }]}>
+          <Ionicons name="pencil" size={14} color={colors.primary} />
+          <Text style={{ color: colors.primary, flex: 1, marginLeft: 8, fontSize: 13 }}>Editing message</Text>
+          <TouchableOpacity onPress={cancelEdit} style={{ padding: 4 }}>
+            <Ionicons name="close" size={16} color={colors.textSecondary} />
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Composer */}
+      {isRecording ? (
+        <View style={[styles.inputRow, { backgroundColor: colors.bg, borderTopColor: colors.border }]}>
+          <TouchableOpacity onPress={cancelRecording} style={styles.recordCancelBtn}>
+            <Ionicons name="trash-outline" size={20} color="#EF4444" />
+          </TouchableOpacity>
+          <View style={styles.recordingBar}>
+            <View style={styles.recordDot} />
+            <Text style={styles.recordTimer}>{formatDuration(recordSeconds)}</Text>
+            <Text style={styles.recordHint}>Recording voice message…</Text>
+          </View>
+          <TouchableOpacity onPress={finishRecording} style={[styles.sendBtn, { backgroundColor: colors.primary }]}>
+            <Ionicons name="checkmark" size={20} color="#000" />
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <View style={[styles.inputRow, { backgroundColor: colors.bg, borderTopColor: colors.border }]}>
+          {!editing && (
+            <TouchableOpacity onPress={pickImage} style={styles.attachBtn}>
+              <Ionicons name="image-outline" size={22} color={colors.textSecondary} />
+            </TouchableOpacity>
+          )}
+          <TextInput
+            style={[styles.msgInput, { color: colors.text, backgroundColor: colors.cardBg, borderColor: colors.border }]}
+            value={text}
+            onChangeText={setText}
+            placeholder={editing ? 'Edit message…' : attachment ? 'Add a caption…' : 'Message…'}
+            placeholderTextColor={colors.textSecondary}
+            multiline
+            maxLength={4000}
+            returnKeyType="default"
+          />
+          {!editing && !text.trim() && !attachment ? (
+            <TouchableOpacity onPress={startRecording} style={[styles.sendBtn, { backgroundColor: colors.primary }]}>
+              <Ionicons name="mic" size={18} color="#000" />
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              onPress={send}
+              disabled={(!text.trim() && !attachment) || sending}
+              style={[
+                styles.sendBtn,
+                { backgroundColor: colors.primary, opacity: (!text.trim() && !attachment) || sending ? 0.5 : 1 },
+              ]}
+            >
+              {sending
+                ? <ActivityIndicator size="small" color="#000" />
+                : <Ionicons name="send" size={16} color="#000" />}
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+    </KeyboardAvoidingView>
+  );
+}
+
+// ─── Conversation Row ─────────────────────────────────────────────────────────
+const ConvRow = memo(function ConvRow({ conv, onPress, userId }) {
+  const { colors } = useTheme();
+  const other = conv.other_user;
+  const last = conv.last_message;
+  const isOwn = last?.sender === userId || last?.sender_id === userId;
+  const preview = last?.is_deleted
+    ? 'Message deleted'
+    : (last?.text || (last?.media_type ? '📷 Media' : 'No messages yet'));
+
+  return (
+    <TouchableOpacity style={[styles.convoRow, { borderBottomColor: colors.border }]} onPress={onPress} activeOpacity={0.7}>
+      <View>
+        <Avatar uri={other?.profile_photo} size={50} name={other?.username} />
+        {conv.unread_count > 0 && (
+          <View style={[styles.unreadDot, { backgroundColor: colors.primary }]}>
+            <Text style={styles.unreadNum}>
+              {conv.unread_count > 9 ? '9+' : conv.unread_count}
+            </Text>
+          </View>
+        )}
+      </View>
+      <View style={{ flex: 1, marginLeft: 12 }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 3 }}>
+          <Text style={[styles.convoName, { color: colors.text }]} numberOfLines={1}>{other?.username || 'Unknown'}</Text>
+          <Text style={[styles.convoTime, { color: colors.textSecondary }]}>{timeAgo(last?.created_at)}</Text>
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <Text
+            style={[styles.convoPreview, { color: colors.textSecondary }, conv.unread_count > 0 && { color: colors.text, fontWeight: '600' }]}
+            numberOfLines={1}
+          >
+            {isOwn ? 'You: ' : ''}{preview}
+          </Text>
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+});
+
+// ─── Main Screen ──────────────────────────────────────────────────────────────
+export default function MessagesScreen({ navigation }) {
+  const insets = useSafeAreaInsets();
+  const { user: authUser } = useAuth();
+  const { colors } = useTheme();
+  // authUser from /profile/me/ is UserProfileSerializer — actual user id is in .user.id
+  const userId = authUser?.user?.id || authUser?.id;
+
+  const [conversations, setConversations] = useState([]);
+  const [filtered, setFiltered] = useState([]);
+  const [search, setSearch] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [activeConv, setActiveConv] = useState(null);
+  const [showNewChat, setShowNewChat] = useState(false);
+
+  const fetchConversations = useCallback(async (silent = false) => {
+    try {
+      if (!silent) setLoading(true);
+      const data = await api.request('/messages/conversations/');
+      const arr = Array.isArray(data) ? data : [];
+      setConversations(arr);
+      setFiltered(prev => {
+        if (!search.trim()) return arr;
+        return arr.filter(c =>
+          c.other_user?.username?.toLowerCase().includes(search.toLowerCase()),
+        );
+      });
+    } catch {}
+    finally { if (!silent) setLoading(false); }
+  }, [search]);
+
+  useEffect(() => { fetchConversations(false); }, []);
+
+  // Poll every 2 minutes
+  useEffect(() => {
+    const id = setInterval(() => fetchConversations(true), 120000);
+    return () => clearInterval(id);
+  }, [fetchConversations]);
+
+  // Refresh when screen comes into focus (when tab is pressed)
+  useFocusEffect(
+    useCallback(() => {
+      fetchConversations(true);
+    }, [fetchConversations])
+  );
+
+  // Filter on search change
+  useEffect(() => {
+    if (!search.trim()) {
+      setFiltered(conversations);
+    } else {
+      setFiltered(
+        conversations.filter(c =>
+          c.other_user?.username?.toLowerCase().includes(search.toLowerCase()),
+        ),
+      );
+    }
+  }, [search, conversations]);
+
+  const handleStartChat = async (u) => {
+    try {
+      const conv = await api.request('/messages/conversations/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: u.id }),
+      });
+      setShowNewChat(false);
+      setActiveConv(conv);
+      fetchConversations(true);
+    } catch (e) {
+      Alert.alert('Error', e?.message || 'Failed to start conversation');
+    }
+  };
+
+  // If in a chat, show ChatView full-screen
+  if (activeConv) {
+    return (
+      <View style={{ flex: 1, backgroundColor: colors.bg }}>
+        <StatusBar barStyle={colors.statusBarStyle} backgroundColor={colors.bg} />
+        <ChatView
+          conversation={activeConv}
+          onBack={() => {
+            setActiveConv(null);
+            fetchConversations(true);
+          }}
+          userId={userId}
+          navigation={navigation}
+        />
+      </View>
+    );
+  }
+
+  return (
+    <View style={[styles.container, { paddingTop: insets.top }]}>
+      <StatusBar barStyle={colors.statusBarStyle} backgroundColor={colors.bg} />
+
+      {/* Header */}
+      <View style={[styles.header, { backgroundColor: colors.cardBg, borderBottomColor: colors.border }]}>
+        <Text style={[styles.headerTitle, { color: colors.text }]}>Messages</Text>
+        <TouchableOpacity onPress={() => setShowNewChat(true)} style={{ padding: 4 }}>
+          <Ionicons name="create-outline" size={22} color={colors.primary} />
+        </TouchableOpacity>
+      </View>
+
+      {/* Search */}
+      <View style={[styles.searchBar, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
+        <Ionicons name="search" size={16} color={colors.textSecondary} style={{ marginRight: 8 }} />
+        <TextInput
+          style={[styles.searchInput, { color: colors.text }]}
+          value={search}
+          onChangeText={setSearch}
+          placeholder="Search conversations..."
+          placeholderTextColor={colors.textSecondary}
+          returnKeyType="search"
+        />
+        {search.length > 0 && (
+          <TouchableOpacity onPress={() => setSearch('')}>
+            <Ionicons name="close-circle" size={16} color={colors.textSecondary} />
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {/* Conversation list */}
+      {loading ? (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.bg }}>
+          <ActivityIndicator color={colors.primary} size="large" />
+        </View>
+      ) : (
+        <FlatList
+          data={filtered}
+          keyExtractor={c => String(c.id)}
+          renderItem={({ item }) => (
+            <ConvRow
+              conv={item}
+              userId={userId}
+              onPress={() => setActiveConv(item)}
+            />
+          )}
+          ListEmptyComponent={
+            <View style={[styles.emptyState, { backgroundColor: colors.bg }]}>
+              <Ionicons name="chatbubbles-outline" size={52} color={colors.textSecondary} />
+              <Text style={[styles.emptyTitle, { color: colors.text }]}>
+                {search ? `No results for "${search}"` : 'No messages yet'}
+              </Text>
+              {!search && (
+                <>
+                  <Text style={[styles.emptyBody, { color: colors.textSecondary }]}>
+                    Start a conversation with anyone on the platform.
+                  </Text>
+                  <TouchableOpacity
+                    style={[styles.newMsgBtn, { backgroundColor: colors.primary }]}
+                    onPress={() => setShowNewChat(true)}
+                  >
+                    <Text style={[styles.newMsgBtnText, { color: colors.text }]}>Send message</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
+          }
+          refreshing={false}
+          onRefresh={() => fetchConversations(false)}
+        />
+      )}
+
+      {showNewChat && (
+        <NewChatModal
+          onClose={() => setShowNewChat(false)}
+          onSelectUser={handleStartChat}
+        />
+      )}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: BG },
+
+  // Header
+  header: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: 16, paddingVertical: 14,
+    borderBottomWidth: 1, borderBottomColor: BORDER,
+  },
+  headerTitle: { fontSize: 20, fontWeight: '800', color: '#fff' },
+
+  // Search bar
+  searchBar: {
+    flexDirection: 'row', alignItems: 'center',
+    margin: 12, padding: 10,
+    backgroundColor: CARD, borderRadius: 22,
+    borderWidth: 1, borderColor: BORDER,
+  },
+  searchInput: { flex: 1, color: '#fff', fontSize: 14, padding: 0 },
+
+  // Conversation rows
+  convoRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 16, paddingVertical: 12,
+    borderBottomWidth: 1, borderBottomColor: BORDER,
+  },
+  convoName: { fontSize: 15, fontWeight: '700', color: '#fff', flex: 1 },
+  convoTime: { fontSize: 12, color: SUB, marginLeft: 4 },
+  convoPreview: { fontSize: 13, color: '#888', flex: 1 },
+  convoPreviewUnread: { color: '#fff', fontWeight: '600' },
+  unreadDot: {
+    position: 'absolute', bottom: 0, right: 0,
+    minWidth: 18, height: 18, borderRadius: 9,
+    backgroundColor: GOLD,
+    justifyContent: 'center', alignItems: 'center',
+    paddingHorizontal: 3,
+  },
+  unreadNum: { fontSize: 10, color: '#000', fontWeight: '700' },
+
+  // Chat header
+  chatHeader: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 12, paddingBottom: 12,
+    borderBottomWidth: 1, borderBottomColor: BORDER,
+    backgroundColor: BG,
+  },
+  chatName: { fontSize: 15, fontWeight: '700', color: '#fff' },
+  chatSub: { fontSize: 12, color: SUB },
+
+  // Messages
+  msgRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 6, marginBottom: 2 },
+  msgRowMine: { flexDirection: 'row-reverse' },
+  bubble: { borderRadius: 18, paddingHorizontal: 14, paddingVertical: 9, maxWidth: '100%' },
+  bubbleMine: { backgroundColor: GOLD, borderBottomRightRadius: 4 },
+  bubbleOther: { backgroundColor: CARD, borderBottomLeftRadius: 4 },
+  msgMeta: { flexDirection: 'row', marginTop: 3, alignItems: 'center' },
+  msgTime: { fontSize: 10, color: SUB },
+  editedTag: { fontSize: 10, color: SUB },
+  msgImage: { width: 220, height: 260, borderRadius: 14, backgroundColor: '#000' },
+
+  // Composer
+  inputRow: {
+    flexDirection: 'row', alignItems: 'flex-end',
+    paddingHorizontal: 10, paddingTop: 8, paddingBottom: 8,
+    borderTopWidth: 1, borderTopColor: BORDER,
+    gap: 8, backgroundColor: BG,
+  },
+  attachBtn: { padding: 6, alignSelf: 'flex-end', marginBottom: 2 },
+  msgInput: {
+    flex: 1, backgroundColor: CARD, borderRadius: 22,
+    paddingHorizontal: 16, paddingVertical: 10,
+    color: '#fff', fontSize: 15, maxHeight: 120,
+    borderWidth: 1, borderColor: BORDER,
+  },
+  sendBtn: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: GOLD,
+    justifyContent: 'center', alignItems: 'center',
+    alignSelf: 'flex-end',
+  },
+
+  // Voice message playback (inside bubbles)
+  voiceRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    minWidth: 170,
+  },
+  voiceRowMine: {},
+  voiceRowOther: {},
+  voicePlayBtn: {
+    width: 30, height: 30, borderRadius: 15,
+    backgroundColor: 'rgba(0,0,0,0.15)',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  voiceTrack: {
+    flex: 1, height: 4, borderRadius: 2,
+    backgroundColor: 'rgba(255,255,255,0.2)', overflow: 'hidden',
+  },
+  voiceProgress: { height: 4, borderRadius: 2 },
+  voiceDuration: { fontSize: 11, fontWeight: '600', minWidth: 32, textAlign: 'right' },
+
+  // Voice recording bar (composer)
+  recordingBar: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: CARD, borderRadius: 22,
+    paddingHorizontal: 16, paddingVertical: 12,
+    borderWidth: 1, borderColor: BORDER,
+  },
+  recordDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#EF4444' },
+  recordTimer: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  recordHint: { color: SUB, fontSize: 12, flex: 1 },
+  recordCancelBtn: {
+    width: 40, height: 40, borderRadius: 20,
+    justifyContent: 'center', alignItems: 'center', alignSelf: 'flex-end',
+  },
+
+  // Attachment + edit banners
+  attachPreview: {
+    flexDirection: 'row', alignItems: 'center',
+    padding: 10, borderTopWidth: 1, borderTopColor: BORDER,
+    backgroundColor: CARD,
+  },
+  attachThumb: { width: 48, height: 48, borderRadius: 8, backgroundColor: '#000' },
+  editBanner: {
+    flexDirection: 'row', alignItems: 'center',
+    padding: 10, borderTopWidth: 1, borderTopColor: BORDER,
+    backgroundColor: CARD,
+  },
+
+  // New chat modal
+  modalOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.6)',
+  },
+  newChatSheet: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    height: '75%', backgroundColor: CARD,
+    borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    overflow: 'hidden',
+  },
+  sheetHandle: {
+    width: 40, height: 4, borderRadius: 2,
+    backgroundColor: BORDER, alignSelf: 'center', marginTop: 10, marginBottom: 4,
+  },
+  newChatHeader: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: 16, paddingVertical: 12,
+    borderBottomWidth: 1, borderBottomColor: BORDER,
+  },
+  newChatTitle: { fontSize: 17, fontWeight: '700', color: '#fff' },
+  searchRow: {
+    flexDirection: 'row', alignItems: 'center',
+    margin: 12, padding: 10,
+    backgroundColor: BG, borderRadius: 12,
+    borderWidth: 1, borderColor: BORDER,
+  },
+  userRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 16, paddingVertical: 10,
+  },
+  userName: { fontSize: 14, fontWeight: '700', color: '#fff' },
+  userSub: { fontSize: 12, color: SUB, marginTop: 2 },
+  emptyText: { padding: 24, textAlign: 'center', color: SUB, fontSize: 14 },
+
+  // Empty state
+  emptyState: { alignItems: 'center', paddingTop: 60, paddingHorizontal: 24 },
+  emptyTitle: { fontSize: 16, fontWeight: '700', color: '#fff', marginTop: 16 },
+  emptyBody: { fontSize: 13, color: SUB, textAlign: 'center', marginTop: 8 },
+  newMsgBtn: {
+    marginTop: 16, backgroundColor: GOLD,
+    paddingHorizontal: 24, paddingVertical: 10, borderRadius: 22,
+  },
+  newMsgBtnText: { color: '#000', fontWeight: '700', fontSize: 14 },
+});

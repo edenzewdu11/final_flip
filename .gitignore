@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+*.pyo
+*.pyd
+env/
+venv/
+.venv/
+
+# Node / JS
+node_modules/
+.npm
+.yarn
+frontend/dist/
+frontend/node_modules/
+mobile-app/node_modules/
+mobile-ios/node_modules/
+.vite/
+*.zip
+
+# Expo / Builds
+.expo/
+.expo-validation/
+dist/
+web-build/
+*.jks
+*.p8
+*.p12
+*.key
+*.keystore
+*.mobileprovision
+
+# OS & IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

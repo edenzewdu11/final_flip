@@ -1,0 +1,1365 @@
+import { useState, useEffect } from 'react';
+import {
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, Alert, ActivityIndicator,
+  Image, Dimensions, Linking, Platform, TextInput,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTheme } from '../../contexts/ThemeContext';
+import { useAuth } from '../../contexts/AuthContext';
+import api from '../../api';
+import PaymentReceiptModal from '../../components/subscription/PaymentReceiptModal';
+import AppleIAPService from '../../services/AppleIAPService';
+
+const { width } = Dimensions.get('window');
+
+// Coin packages matching the website (fallback used until /wallet/config/ loads)
+const PACKAGE_COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#8B5CF6', '#EC4899'];
+
+const COIN_PACKAGES = [
+  { id: 1, coins: 100, price: 10, allowsAirtime: true, bonus: 0, popular: false, description: 'Starter Pack', savings: 0, color: PACKAGE_COLORS[0] },
+  { id: 2, coins: 250, price: 25, allowsAirtime: false, bonus: 25, popular: false, description: 'Good Value', savings: 0, color: PACKAGE_COLORS[1] },
+  { id: 3, coins: 500, price: 50, allowsAirtime: false, bonus: 75, popular: true, description: 'Most Popular', savings: 0, color: PACKAGE_COLORS[2] },
+  { id: 4, coins: 1000, price: 100, allowsAirtime: false, bonus: 200, popular: false, description: 'Best Deal', savings: 0, color: PACKAGE_COLORS[3] },
+  { id: 5, coins: 2500, price: 250, allowsAirtime: false, bonus: 625, popular: false, description: 'Premium Package', savings: 0, color: PACKAGE_COLORS[4] },
+];
+
+export default function WebsiteCoinScreen({ navigation }) {
+  const insets = useSafeAreaInsets();
+  const { colors } = useTheme();
+  const { user: authUser } = useAuth();
+  const [userCoins, setUserCoins] = useState(0);
+  const [coinPackages, setCoinPackages] = useState(COIN_PACKAGES);
+  const [selectedPackage, setSelectedPackage] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [showPaymentMethodModal, setShowPaymentMethodModal] = useState(false);
+  const [showAppleInfoModal, setShowAppleInfoModal] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [purchasedCoins, setPurchasedCoins] = useState(0);
+  const [paymentMethod, setPaymentMethod] = useState('airtime');
+  
+  // New states for custom amount
+  const [customAmount, setCustomAmount] = useState('');
+  const [isCustomAmount, setIsCustomAmount] = useState(false);
+
+  useEffect(() => {
+    loadUserCoins();
+    loadPackages();
+  }, []);
+
+  const loadPackages = async () => {
+    try {
+      // Use same endpoint as the website's Buy Coins page
+      const response = await api.request('/wallet/config/');
+      console.log('Wallet config response:', response);
+      // Backend returns { packages: [...] }
+      const rawPkgs = response?.packages || [];
+      const pkgs = (Array.isArray(rawPkgs) ? rawPkgs : []).map((p, i) => ({
+        id: p.id,
+        coins: p.coin_amount,
+        price: parseFloat(p.price_etb),
+        allowsAirtime: p.allows_airtime === true,
+        bonus: p.bonus_coins || 0,
+        appleProductId: p.apple_product_id || p.appleProductId || null,
+        popular: p.is_featured || false,
+        description: p.name,
+        savings: 0,
+        color: PACKAGE_COLORS[i % PACKAGE_COLORS.length],
+      }));
+      console.log('Loaded packages:', pkgs);
+      if (pkgs.length > 0) setCoinPackages(pkgs);
+    } catch (e) {
+      console.log('Using fallback packages:', e);
+    }
+  };
+  const loadUserCoins = async () => {
+    try {
+      // Use wallet API to get total coin balance (same as WalletScreen)
+      const response = await api.request('/wallet/');
+      console.log('Wallet API response for coins:', response);
+      
+      // Get total balance from wallet data
+      const totalCoins = response?.balance?.total ?? response?.total ?? 0;
+      console.log('Setting user coins to:', totalCoins);
+      
+      setUserCoins(totalCoins);
+    } catch (error) {
+      console.error('Failed to load user coins from wallet:', error);
+      
+      // Fallback to profile API if wallet fails
+      try {
+        let response;
+        try {
+          response = await api.request('/profile/');
+        } catch {
+          try {
+            response = await api.request('/user/profile/');
+          } catch {
+            response = await api.request('/auth/profile/');
+          }
+        }
+        const coins = response?.coins || 0;
+        console.log('Fallback: Setting user coins to:', coins);
+        setUserCoins(coins);
+      } catch (fallbackError) {
+        console.error('All coin loading methods failed:', fallbackError);
+        setUserCoins(0);
+      }
+    }
+  };
+
+  const allowsAirtime = (pkg) => pkg?.allowsAirtime === true || Number(pkg?.price) === 10;
+
+  // New function to handle custom amount
+  const handleCustomAmount = () => {
+    const amount = parseFloat(customAmount);
+    if (!amount || amount < 5) {
+      Alert.alert('Invalid Amount', 'Please enter an amount of at least 5 ETB');
+      return;
+    }
+    
+    // Create a custom package for the entered amount
+    // Assuming 1 ETB = 10 coins (you can adjust this rate)
+    const coinsFromAmount = Math.floor(amount * 10);
+    const customPackage = {
+      id: 'custom',
+      coins: coinsFromAmount,
+      price: amount,
+      allowsAirtime: amount >= 10, // Allow airtime for amounts >= 10 ETB
+      bonus: 0,
+      popular: false,
+      description: `Custom ${coinsFromAmount} Coins`,
+      savings: 0,
+      color: '#8fc441',
+    };
+    
+    setSelectedPackage(customPackage);
+    setIsCustomAmount(true);
+    setShowPaymentMethodModal(true);
+  };
+
+  const handlePackageSelect = (pkg) => {
+    setSelectedPackage(pkg);
+    setIsCustomAmount(false);
+    setShowPaymentMethodModal(true);
+  };
+
+  const handlePaymentMethodSelect = (method) => {
+    setPaymentMethod(method);
+    setShowPaymentMethodModal(false);
+    setShowPaymentModal(true);
+  };
+
+  const handleAppleOptionPress = () => {
+    setShowPaymentMethodModal(false);
+    setShowAppleInfoModal(true);
+  };
+
+  // Called from the receipt confirmation popup's "Proceed" button — no
+  // native Alert.alert confirmations, matching the web app's flow of a
+  // single receipt-style popup before charging.
+  const handleConfirmPurchase = async () => {
+    if (!selectedPackage) {
+      Alert.alert('Error', 'No package selected. Please try again.');
+      return;
+    }
+
+    if (paymentMethod === 'airtime') {
+      await processAirtimeDirectPayment(selectedPackage);
+      setShowPaymentModal(false);
+      return;
+    }
+
+    if (paymentMethod === 'telebirr') {
+      setLoading(true);
+      try {
+        let userPhoneNumber = authUser?.phone_number || authUser?.phone || authUser?.username || '';
+        if (!userPhoneNumber || userPhoneNumber.replace(/\D/g, '').length < 9) {
+          try {
+            const profile = await api.getProfile();
+            userPhoneNumber = profile?.phone_number || profile?.phone || userPhoneNumber;
+          } catch (_) {}
+        }
+
+        const response = await api.telebirrCoinPurchase({
+          packageId: selectedPackage.id,
+          amountEtb: selectedPackage.price,
+          phoneNumber: userPhoneNumber,
+          coins: selectedPackage.coins,
+        });
+
+        if (response?.success || response?.mandate_id || response?.originator_conversation_id) {
+          setShowPaymentModal(false);
+          Alert.alert(
+            'Payment Requested',
+            'Payment request sent! Please enter your PIN on your phone to complete the purchase.',
+            [{
+              text: 'OK',
+              onPress: () => {
+                // Poll for balance update
+                let pollCount = 0;
+                const pollInterval = setInterval(async () => {
+                  pollCount += 1;
+                  await loadUserCoins();
+                  if (pollCount >= 12) {
+                    clearInterval(pollInterval);
+                  }
+                }, 5000);
+              }
+            }]
+          );
+        } else {
+          Alert.alert('Payment Failed', response?.error || response?.message || 'Could not initiate payment. Please try again.');
+        }
+      } catch (error) {
+        console.error('telebirr payment error:', error);
+        Alert.alert('Error', error?.data?.error || error?.message || 'telebirr payment failed. Please try again.');
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
+    if (paymentMethod === 'apple') {
+      await processApplePayment(selectedPackage);
+    }
+  };
+
+  const processApplePayment = async (pkg) => {
+    const appleProductId = pkg.appleProductId || pkg.apple_product_id;
+    if (!appleProductId) {
+      Alert.alert('Apple Pay Unavailable', 'This coin package is not configured for Apple purchases yet.');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const result = await AppleIAPService.purchaseCoinPackage(pkg.id, appleProductId);
+      if (result.success) {
+        setShowPaymentModal(false);
+        setPurchasedCoins(result.coinsAdded || pkg.coins + (pkg.bonus || 0));
+        setShowSuccessModal(true);
+        loadUserCoins();
+      } else if (!result.cancelled) {
+        Alert.alert('Apple Pay Failed', result.error || 'Could not complete the Apple purchase.');
+      }
+    } catch (error) {
+      Alert.alert('Apple Pay Failed', error?.message || 'Could not complete the Apple purchase.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const processAirtimeDirectPayment = async (pkg) => {
+    try {
+      setLoading(true);
+      // Get user's phone number - send as-is like website
+      let userPhoneNumber = authUser?.phone_number || authUser?.phone || authUser?.username;
+      if (!userPhoneNumber) {
+        Alert.alert('Error', 'Phone number not found. Please update your profile.');
+        return;
+      }
+
+      const purchasedAmount = pkg.coins + (pkg.bonus || 0);
+      const response = await api.request('/charging/coin-purchase/', {
+        method: 'POST',
+        body: JSON.stringify({
+          phone_number: userPhoneNumber,
+          coins: purchasedAmount,
+        }),
+      });
+
+      console.log('Airtime coin purchase response:', response);
+
+      if (response.success) {
+        setShowPaymentModal(false);
+        setPurchasedCoins(purchasedAmount);
+        setShowSuccessModal(true);
+        loadUserCoins();
+      } else {
+        Alert.alert('Payment Failed', response.error || response.message || 'Could not complete payment. Please try again.');
+      }
+      
+    } catch (error) {
+      console.error('Payment error:', error);
+      const errMsg = error?.message || 'Payment failed. Please try again.';
+      if (errMsg.includes('insufficient_balance') || errMsg.includes('not enough')) {
+        Alert.alert('Insufficient Balance', 'Your airtime balance is not enough. Please recharge and try again.');
+      } else if (errMsg.includes('INTERNAL_ERROR') || errMsg.includes('charging_failed')) {
+        Alert.alert('Service Unavailable', 'The payment service is temporarily unavailable. Please try again in a few minutes.');
+      } else {
+        Alert.alert('Payment Failed', errMsg);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getAirtimeSMSCode = (pkg) => {
+    // Use the correct SMS codes for airtime payments that work with carrier
+    const airtimeCodes = {
+      1: 'COIN100',  // 100 coins for 10 ETB
+      2: 'COIN250',  // 250 coins for 25 ETB
+      3: 'COIN500',  // 500 coins for 50 ETB
+      4: 'COIN1000', // 1000 coins for 100 ETB
+      5: 'COIN2500'  // 2500 coins for 250 ETB
+    };
+    return airtimeCodes[pkg.id] || 'COIN100';
+  };
+
+  const getSMSCode = (pkg) => {
+    const codes = {
+      1: 'COIN100',
+      2: 'COIN250', 
+      3: 'COIN500',
+      4: 'COIN1000',
+      5: 'COIN2500'
+    };
+    return codes[pkg.id] || 'COIN100';
+  };
+
+  const formatSavings = (savings) => {
+    return savings > 0 ? `Save ${savings}%` : '';
+  };
+
+  return (
+    <View style={[styles.container, { backgroundColor: colors.bg, paddingTop: insets.top }]}>
+      {/* Header */}
+      <View style={[styles.header, { backgroundColor: colors.cardBg, borderBottomColor: colors.border }]}>
+        <TouchableOpacity onPress={() => navigation.goBack()}>
+          <Ionicons name="chevron-back" size={24} color={colors.text} />
+        </TouchableOpacity>
+        <Text style={[styles.headerTitle, { color: colors.text }]}>Purchase Coins</Text>
+        <View style={{ width: 24 }} />
+      </View>
+
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        <View style={styles.balanceBar}>
+          <View style={styles.balanceBarIcon}>
+            <Ionicons name="wallet-outline" size={18} color="#B7E66A" />
+          </View>
+          <Text style={styles.balanceBarLabel}>YOUR BALANCE</Text>
+          <Text style={styles.balanceBarAmount}>{userCoins.toLocaleString()} coins</Text>
+        </View>
+
+        <View style={styles.titleSection}>
+          <Text style={styles.mainTitle}>Buy Coins</Text>
+          <Text style={styles.subtitle}>Choose your coin package</Text>
+        </View>
+
+        {/* Coin Packages */}
+        <View style={styles.packagesGrid}>
+          {coinPackages.map((pkg) => (
+            <TouchableOpacity
+              key={pkg.id}
+              activeOpacity={0.92}
+              onPress={() => handlePackageSelect(pkg)}
+              style={[
+                styles.packageCard,
+                { backgroundColor: colors.cardBg, borderColor: '#292E27' }
+              ]}
+            >
+              {pkg.popular && (
+                <View style={styles.popularBadge}>
+                  <Ionicons name="flame" size={12} color="#10140E" />
+                  <Text style={styles.popularText}>POPULAR</Text>
+                </View>
+              )}
+
+              <View style={styles.coinCardTop}>
+                <View style={styles.coinIconCircle}>
+                  <Ionicons name="wallet" size={28} color="#10140E" />
+                </View>
+                <Text style={styles.coinAmount}>{pkg.coins.toLocaleString()}</Text>
+                <Text style={styles.coinLabel}>COINS</Text>
+                {pkg.bonus > 0 && (
+                  <View style={styles.bonusBadge}>
+                    <Text style={styles.bonusText}>+{pkg.bonus} bonus included</Text>
+                  </View>
+                )}
+              </View>
+
+              <View style={styles.packageDivider} />
+
+              <View style={styles.packageInfo}>
+                <Text style={styles.totalCoins}>{pkg.price} <Text style={styles.etb}>ETB</Text></Text>
+                <Text style={styles.packageDesc}>{(pkg.price / pkg.coins).toFixed(3)} ETB per coin</Text>
+              </View>
+
+              <View style={styles.purchaseOptions}>
+                <TouchableOpacity
+                  style={styles.buyCoinsButton}
+                  onPress={() => handlePackageSelect(pkg)}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="cart-outline" size={16} color="#000" />
+                  <Text style={styles.buyCoinsButtonText}>Buy Coins</Text>
+                </TouchableOpacity>
+              </View>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </ScrollView>
+
+      <Modal
+        visible={showPaymentMethodModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowPaymentMethodModal(false)}
+      >
+        <View style={[styles.modalOverlay, { backgroundColor: 'rgba(0,0,0,0.78)' }]}>
+          <View style={[styles.paymentChoiceModal, { backgroundColor: colors.cardBg }]}>
+            <TouchableOpacity
+              accessibilityLabel="Close payment methods"
+              style={styles.paymentCloseButton}
+              onPress={() => setShowPaymentMethodModal(false)}
+            >
+              <Ionicons name="close" size={20} color="#AAB4A3" />
+            </TouchableOpacity>
+
+            <View style={styles.paymentChoiceIcon}>
+              <Ionicons name="phone-portrait-outline" size={30} color="#10140E" />
+            </View>
+            <Text style={styles.paymentChoiceEyebrow}>SECURE CHECKOUT</Text>
+            <Text
+              style={[styles.paymentChoiceTitle, { color: colors.text }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.8}
+            >
+              Choose payment method
+            </Text>
+            <Text style={styles.paymentChoiceSubtitle}>Complete your coin purchase securely</Text>
+
+            {selectedPackage && (
+              <View style={styles.paymentPackageSummary}>
+                <View>
+                  <Text style={styles.paymentPackageName}>{selectedPackage.description}</Text>
+                  <Text style={styles.paymentPackageCoins}>
+                    {(selectedPackage.coins + (selectedPackage.bonus || 0)).toLocaleString()} coins
+                  </Text>
+                </View>
+                <Text style={styles.paymentPackagePrice}>{selectedPackage.price} ETB</Text>
+              </View>
+            )}
+
+            {selectedPackage && allowsAirtime(selectedPackage) && (
+              <TouchableOpacity
+                style={styles.airtimeButton}
+                onPress={() => handlePaymentMethodSelect('airtime')}
+              >
+                <Ionicons name="phone-portrait-outline" size={21} color="#B7E66A" />
+                <View style={styles.paymentButtonCopy}>
+                  <Text style={styles.airtimeButtonText}>Pay with Airtime</Text>
+                  <Text style={styles.paymentButtonHint}>Charge your registered phone</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color="#8BD34C" />
+              </TouchableOpacity>
+            )}
+
+            <TouchableOpacity
+              style={styles.telebirrButton}
+              onPress={() => handlePaymentMethodSelect('telebirr')}
+            >
+              <Image 
+                source={require('../../../assets/ethio-logo.png')} 
+                style={{ width: 28, height: 28 }} 
+                resizeMode="contain"
+              />
+              <View style={styles.paymentButtonCopy}>
+                <Text style={styles.telebirrButtonText}>Pay with telebirr</Text>
+                <Text style={styles.telebirrButtonHint}>Secure payment request</Text>
+              </View>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.appleButton}
+              onPress={handleAppleOptionPress}
+            >
+              <Ionicons name="logo-apple" size={21} color="#10140E" />
+              <View style={styles.paymentButtonCopy}>
+                <Text style={styles.appleButtonText}>Pay with Apple</Text>
+                {Platform.OS !== 'ios' && (
+                  <Text style={styles.appleButtonHint}>Payment completes on iPhone</Text>
+                )}
+              </View>
+            </TouchableOpacity>
+            <Text style={styles.paymentSecureNote}>You will receive a payment request on your phone</Text>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={showAppleInfoModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowAppleInfoModal(false)}
+      >
+        <View style={[styles.modalOverlay, { backgroundColor: 'rgba(0,0,0,0.82)' }]}>
+          <View style={[styles.appleInfoModal, { backgroundColor: colors.cardBg }]}>
+            <TouchableOpacity
+              accessibilityLabel="Close Apple payment information"
+              style={styles.paymentCloseButton}
+              onPress={() => setShowAppleInfoModal(false)}
+            >
+              <Ionicons name="close" size={20} color="#AAB4A3" />
+            </TouchableOpacity>
+            <View style={styles.appleInfoIcon}>
+              <Ionicons name="logo-apple" size={30} color="#10140E" />
+            </View>
+            <Text style={styles.paymentChoiceEyebrow}>APPLE ACCOUNT PAYMENT</Text>
+            <Text style={[styles.appleInfoTitle, { color: colors.text }]}>How payment works</Text>
+            <Text style={[styles.appleInfoText, { color: colors.textSecondary }]}> 
+              Apple securely confirms your purchase with the Apple Account signed in on this device.
+            </Text>
+            <View style={styles.appleInfoSteps}>
+              <Text style={[styles.appleInfoStep, { color: colors.text }]}>{'1.  Confirm the purchase with Face ID, Touch ID, or your Apple password.'}</Text>
+              <Text style={[styles.appleInfoStep, { color: colors.text }]}>{'2.  Apple sends a secure receipt to FlipStar for verification.'}</Text>
+              <Text style={[styles.appleInfoStep, { color: colors.text }]}>{'3.  Your coins are added after the receipt is approved.'}</Text>
+            </View>
+            <Text style={[styles.appleInfoNote, { color: colors.textSecondary }]}>Apple Account payments complete on iPhone only.</Text>
+            <TouchableOpacity
+              style={styles.appleContinueButton}
+              onPress={() => {
+                setShowAppleInfoModal(false);
+                if (Platform.OS === 'ios') {
+                  handlePaymentMethodSelect('apple');
+                }
+              }}
+            >
+              <Text style={styles.appleContinueText}>{Platform.OS === 'ios' ? 'Continue to Apple Payment' : 'Close'}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Payment Receipt Confirmation Popup — matches the web app's Telebirr
+          subscription receipt design (plan/amount/date/phone + Proceed). */}
+      {selectedPackage && (
+        <PaymentReceiptModal
+          visible={showPaymentModal}
+          onClose={() => setShowPaymentModal(false)}
+          onProceed={handleConfirmPurchase}
+          processing={loading}
+          title={paymentMethod === 'airtime' ? 'Buy Coins via Airtime' : paymentMethod === 'apple' ? 'Buy Coins via Apple Account' : 'Buy Coins via telebirr'}
+          amountLabel={`${selectedPackage.price || 0}.00`}
+          rows={[
+            { label: 'Package', value: selectedPackage.description || 'Coin Pack' },
+            { label: 'Coins', value: `${(selectedPackage.coins || 0) + (selectedPackage.bonus || 0)}` },
+            {
+              label: 'Date',
+              value: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+            },
+            {
+              label: 'Phone Number',
+              value: authUser?.phone_number || authUser?.phone || authUser?.username || 'N/A',
+            },
+          ]}
+          proceedLabel={paymentMethod === 'airtime' ? 'Confirm Airtime Payment' : paymentMethod === 'apple' ? 'Confirm Apple Payment' : 'Proceed to telebirr'}
+        />
+      )}
+
+      {/* Success Modal */}
+      <Modal
+        visible={showSuccessModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowSuccessModal(false)}
+      >
+        <View style={[styles.modalOverlay, { backgroundColor: 'rgba(0,0,0,0.5)' }]}>
+          <View style={[styles.successModal, { backgroundColor: colors.cardBg }]}>
+            <View style={[styles.successIconCircle, { backgroundColor: '#10B98120' }]}>
+              <Ionicons name="checkmark-circle" size={48} color="#10B981" />
+            </View>
+            <Text style={[styles.successTitle, { color: colors.text }]}>Payment Successful!</Text>
+            <Text style={[styles.successMessage, { color: colors.textSecondary }]}>
+              {purchasedCoins} coins have been added to your account!
+            </Text>
+            <TouchableOpacity
+              style={[styles.successBtn, { backgroundColor: colors.primary }]}
+              onPress={() => {
+                setShowSuccessModal(false);
+                loadUserCoins(); // Refresh balance
+              }}
+            >
+              <Text style={styles.successBtnText}>Got it</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  content: {
+    flex: 1,
+  },
+  heroSection: {
+    paddingHorizontal: 16,
+    paddingVertical: 30,
+    marginHorizontal: 16,
+    borderRadius: 20,
+    marginBottom: 20,
+  },
+  coinBalanceCard: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 24,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  balanceLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  coinIconCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  balanceLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  balanceAmount: {
+    fontSize: 32,
+    fontWeight: '800',
+    lineHeight: 36,
+  },
+  balanceSubtext: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  addCoinsBtn: {
+    padding: 12,
+    borderRadius: 20,
+  },
+  titleSection: {
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    alignItems: 'center',
+  },
+  mainTitle: {
+    fontSize: 28,
+    fontWeight: '900',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  subtitle: {
+    fontSize: 16,
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  packagesGrid: {
+    paddingHorizontal: 16,
+    paddingBottom: 20,
+  },
+  packageCard: {
+    borderRadius: 20,
+    padding: 24,
+    marginBottom: 16,
+    position: 'relative',
+  },
+  packageHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderRadius: 16,
+    marginBottom: 20,
+  },
+  coinDisplay: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  coinInfo: {
+    alignItems: 'flex-start',
+  },
+  coinAmount: {
+    fontSize: 28,
+    fontWeight: '800',
+  },
+  coinLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  priceTag: {
+    backgroundColor: 'rgba(0,0,0,0.2)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  priceAmount: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  packageInfo: {
+    marginBottom: 20,
+  },
+  packageName: {
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  packageDesc: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  featuresList: {
+    gap: 8,
+    marginBottom: 20,
+  },
+  featureItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  featureText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  purchaseOptions: {
+    gap: 12,
+  },
+  purchaseBtn: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
+    padding: 16,
+    borderRadius: 12,
+  },
+  purchaseBtnText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  paymentMethodInfo: {
+    alignItems: 'center',
+    padding: 20,
+    marginBottom: 20,
+  },
+  paymentMethodIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: 'rgba(0,0,0,0.05)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  paymentMethodTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  paymentMethodDesc: {
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  confirmPaymentBtn: {
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  confirmPaymentBtnText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  popularBadge: {
+    position: 'absolute',
+    top: -1,
+    right: -1,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderTopRightRadius: 16,
+    borderBottomLeftRadius: 8,
+  },
+  popularText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  packageHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 16,
+  },
+  coinDisplay: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  coinAmount: {
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  bonusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  bonusText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  packageInfo: {
+    marginBottom: 16,
+  },
+  packageName: {
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  totalCoins: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  savingsText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  priceSection: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  priceAmount: {
+    fontSize: 20,
+    fontWeight: '800',
+  },
+  selectBtn: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
+  },
+  selectBtnText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  paymentModal: {
+    width: '90%',
+    maxWidth: 400,
+    borderRadius: 20,
+    padding: 24,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  selectedPackage: {
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 20,
+  },
+  selectedPackageLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  selectedAmount: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  selectedPrice: {
+    fontSize: 14,
+  },
+  paymentOptions: {
+    gap: 12,
+  },
+  paymentOption: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  paymentOptionText: {
+    fontSize: 16,
+    fontWeight: '600',
+    flex: 1,
+    marginLeft: 12,
+  },
+  successModal: {
+    width: '90%',
+    maxWidth: 320,
+    borderRadius: 20,
+    padding: 24,
+    alignItems: 'center',
+  },
+  successIconCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  successTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  successMessage: {
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 20,
+  },
+  successBtn: {
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 20,
+  },
+  successBtnText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  balanceBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 16,
+    marginTop: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: '#151A13',
+    borderWidth: 1,
+    borderColor: '#293325',
+  },
+  balanceBarIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#26351D',
+    marginRight: 9,
+  },
+  balanceBarLabel: {
+    color: '#87917C',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1,
+  },
+  balanceBarAmount: {
+    color: '#B7E66A',
+    fontSize: 14,
+    fontWeight: '800',
+    marginLeft: 'auto',
+  },
+  titleSection: {
+    paddingHorizontal: 16,
+    paddingTop: 24,
+    paddingBottom: 14,
+    alignItems: 'center',
+  },
+  mainTitle: {
+    color: '#F5F7F1',
+    fontSize: 27,
+    fontWeight: '900',
+    textAlign: 'center',
+    marginBottom: 5,
+  },
+  subtitle: {
+    color: '#B7E66A',
+    fontSize: 13,
+    textAlign: 'center',
+  },
+  packagesGrid: {
+    paddingHorizontal: 16,
+    paddingBottom: 10,
+  },
+  packageCard: {
+    width: '100%',
+    minHeight: 268,
+    borderRadius: 18,
+    borderWidth: 1,
+    padding: 12,
+    marginBottom: 14,
+    position: 'relative',
+  },
+  coinCardTop: {
+    alignItems: 'center',
+    paddingTop: 16,
+    minHeight: 136,
+  },
+  coinIconCircle: {
+    width: 62,
+    height: 62,
+    borderRadius: 31,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#B7E66A',
+    shadowColor: '#B7E66A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.28,
+    shadowRadius: 9,
+    elevation: 5,
+    marginBottom: 10,
+  },
+  coinAmount: {
+    color: '#F5F7F1',
+    fontSize: 29,
+    lineHeight: 32,
+    fontWeight: '900',
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+  },
+  coinLabel: {
+    color: '#B7E66A',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1,
+    marginTop: 2,
+  },
+  bonusBadge: {
+    marginTop: 10,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 12,
+    backgroundColor: '#12362B',
+    borderWidth: 1,
+    borderColor: '#17765A',
+  },
+  bonusText: {
+    color: '#47D3A0',
+    fontSize: 9,
+    fontWeight: '800',
+  },
+  packageDivider: {
+    height: 1,
+    backgroundColor: '#292E27',
+    marginVertical: 10,
+  },
+  packageInfo: {
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  totalCoins: {
+    color: '#8BD34C',
+    fontSize: 23,
+    fontWeight: '900',
+  },
+  etb: {
+    fontSize: 12,
+    letterSpacing: 1,
+  },
+  packageDesc: {
+    color: '#9BA693',
+    fontSize: 10,
+    marginTop: 4,
+  },
+  purchaseOptions: {
+    marginTop: 'auto',
+  },
+  buyCoinsButton: {
+    backgroundColor: '#8fc441',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    width: '100%',
+    shadowColor: '#8fc441',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.35,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  buyCoinsButtonText: {
+    color: '#000',
+    fontSize: 14,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+  purchaseBtn: {
+    minHeight: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+    backgroundColor: '#20271C',
+    borderWidth: 1,
+    borderColor: '#293325',
+  },
+  purchaseBtnText: {
+    color: '#B7E66A',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  popularBadge: {
+    position: 'absolute',
+    top: -12,
+    right: 12,
+    zIndex: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 11,
+    paddingVertical: 5,
+    borderRadius: 14,
+    backgroundColor: '#B7E66A',
+  },
+  popularText: {
+    color: '#10140E',
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  paymentChoiceModal: {
+    width: '88%',
+    maxWidth: 380,
+    borderRadius: 24,
+    padding: 24,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#384832',
+  },
+  paymentCloseButton: {
+    position: 'absolute',
+    top: 14,
+    right: 14,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#222A20',
+  },
+  paymentChoiceIcon: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#B7E66A',
+    marginTop: 8,
+    marginBottom: 14,
+    shadowColor: '#B7E66A',
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 5,
+  },
+  paymentChoiceEyebrow: {
+    color: '#8BD34C',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 1.4,
+    marginBottom: 6,
+  },
+  paymentChoiceTitle: {
+    fontSize: 20,
+    fontWeight: '900',
+    marginBottom: 6,
+  },
+  paymentChoiceSubtitle: {
+    color: '#9BA693',
+    fontSize: 13,
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  paymentPackageSummary: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 14,
+    borderRadius: 14,
+    backgroundColor: '#151A13',
+    borderWidth: 1,
+    borderColor: '#293325',
+    marginBottom: 16,
+  },
+  paymentPackageName: {
+    color: '#E8EFE2',
+    fontSize: 14,
+    fontWeight: '800',
+    marginBottom: 4,
+  },
+  paymentPackageCoins: {
+    color: '#8C9885',
+    fontSize: 12,
+  },
+  paymentPackagePrice: {
+    color: '#B7E66A',
+    fontSize: 18,
+    fontWeight: '900',
+  },
+  telebirrButton: {
+    width: '100%',
+    minHeight: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 9,
+    borderRadius: 14,
+    backgroundColor: '#B7E66A',
+  },
+  telebirrButtonText: {
+    color: '#10140E',
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  telebirrButtonHint: {
+    color: '#30451F',
+    fontSize: 10,
+    marginTop: 2,
+  },
+  appleButton: {
+    width: '100%',
+    minHeight: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 9,
+    borderRadius: 14,
+    backgroundColor: '#B7E66A',
+    borderWidth: 1,
+    borderColor: '#D5FF91',
+    marginTop: 10,
+  },
+  appleButtonText: {
+    color: '#10140E',
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  appleButtonHint: {
+    color: '#30451F',
+    fontSize: 10,
+    marginTop: 2,
+  },
+  appleInfoModal: {
+    width: '100%',
+    maxWidth: 420,
+    borderRadius: 22,
+    padding: 24,
+    alignItems: 'center',
+  },
+  appleInfoIcon: {
+    width: 62,
+    height: 62,
+    borderRadius: 31,
+    backgroundColor: '#B7E66A',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  appleInfoTitle: {
+    fontSize: 24,
+    fontWeight: '900',
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  appleInfoText: {
+    fontSize: 14,
+    lineHeight: 21,
+    textAlign: 'center',
+  },
+  appleInfoSteps: {
+    width: '100%',
+    gap: 12,
+    marginTop: 20,
+    marginBottom: 16,
+  },
+  appleInfoStep: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  appleInfoNote: {
+    fontSize: 12,
+    textAlign: 'center',
+    marginBottom: 18,
+  },
+  appleContinueButton: {
+    width: '100%',
+    minHeight: 52,
+    borderRadius: 14,
+    backgroundColor: '#B7E66A',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  appleContinueText: {
+    color: '#10140E',
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  airtimeButton: {
+    width: '100%',
+    minHeight: 58,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 15,
+    borderRadius: 14,
+    backgroundColor: '#20271C',
+    borderWidth: 1,
+    borderColor: '#506B39',
+    marginBottom: 10,
+  },
+  paymentButtonCopy: {
+    flex: 1,
+    marginLeft: 10,
+  },
+  airtimeButtonText: {
+    color: '#E8EFE2',
+    fontSize: 14,
+    fontWeight: '800',
+    marginBottom: 3,
+  },
+  paymentButtonHint: {
+    color: '#8C9885',
+    fontSize: 10,
+  },
+  paymentSecureNote: {
+    color: '#788273',
+    fontSize: 10,
+    textAlign: 'center',
+    marginTop: 12,
+  },
+});

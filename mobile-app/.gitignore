@@ -1,0 +1,6 @@
+node_modules/
+.expo/
+dist/
+credentials.json
+*.jks
+*.keystore

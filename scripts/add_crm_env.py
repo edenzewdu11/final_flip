@@ -1,0 +1,13 @@
+with open(r'c:\Users\hp\Downloads\Telegram Desktop\postwork\flipstar\.env', 'a') as f:
+    f.write('\n')
+    f.write('# Ethio Telecom CRM Integration (PresentServiceGift API)\n')
+    f.write('CRM_ENDPOINT=http://10.250.67.208:17130/IPCC/ESB4mVASHandle\n')
+    f.write('CRM_SERVICE_NUMBER_A=0911227833\n')
+    f.write('CRM_ACCESS_USER=xxx\n')
+    f.write('CRM_ACCESS_PASSWORD=xxxx\n')
+    f.write('CRM_CHANNEL_ID=x\n')
+    f.write('CRM_TECHNICAL_CHANNEL_ID=51\n')
+    f.write('CRM_TENANT_ID=101\n')
+    f.write('CRM_CURRENCY_ID=1048\n')
+    f.write('CRM_CHARGE_CODE=CC_GIFT_ONCE_OFF_FEE\n')
+print("CRM configuration added to root .env")
