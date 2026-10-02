@@ -54,6 +54,7 @@ export default function SubscriptionPlansModal({ visible, onClose, onSuccess, us
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const [tiers, setTiers] = useState(getFallbackTiers());
+  const [activeSub, setActiveSub] = useState(null);
   const [loading, setLoading] = useState(false);
   const [selectedTier, setSelectedTier] = useState(null);
   const [smsSent, setSmsSent] = useState(false);
@@ -68,6 +69,7 @@ export default function SubscriptionPlansModal({ visible, onClose, onSuccess, us
   const [methodInFlight, setMethodInFlight] = useState('sms'); // 'sms' | 'telebirr'
   const [subIsNewUser, setSubIsNewUser] = useState(false);
   const mandateIdRef = useRef(null);
+  const ussdOriginatorRef = useRef(null);
   const telebirrPhoneRef = useRef('');
   const authDataRef = useRef(null);
   
@@ -95,7 +97,27 @@ export default function SubscriptionPlansModal({ visible, onClose, onSuccess, us
       count++;
       setPollCount(count);
       try {
-        if (mandateIdRef.current) {
+        if (ussdOriginatorRef.current) {
+          const s = await api.request(
+            `/subscription/telebirr/ussd/status/?originator_conversation_id=${encodeURIComponent(ussdOriginatorRef.current)}`,
+            { skipCache: true }
+          );
+          if (s?.status === 'completed' && s?.subscription_status === 'active') {
+            clearInterval(pollRef.current);
+            setTelebirrProcessing(false);
+            setSubIsNewUser(!!s.is_new_user);
+            setConfirmed(true);
+            return;
+          }
+          if (s?.status === 'failed') {
+            clearInterval(pollRef.current);
+            setTelebirrProcessing(false);
+            setSmsSent(false);
+            setPendingTier(null);
+            Alert.alert('Payment failed', 'Your Telebirr payment could not be completed. Please try again.');
+            return;
+          }
+        } else if (mandateIdRef.current) {
           const s = await api.request(
             `/direct-debit/check-status/?mandate_id=${mandateIdRef.current}`,
             { skipCache: true }
@@ -139,15 +161,31 @@ export default function SubscriptionPlansModal({ visible, onClose, onSuccess, us
     setTelebirrProcessing(false);
     setSubIsNewUser(false);
     mandateIdRef.current = null;
+    ussdOriginatorRef.current = null;
     telebirrPhoneRef.current = '';
     authDataRef.current = null;
   };
 
   const loadSubscriptionData = async () => {
     try {
-      console.log('Using fallback subscription tiers');
+      const data = await api.request('/subscriptions/tiers/active/', { skipCache: true });
+      const list = Array.isArray(data) ? data : data?.results;
+      const real = (list || []).filter(
+        (t) => t && t.id !== undefined && t.duration_type !== 'ondemand' && t.name !== 'OnDemand'
+      );
+      if (real.length > 0) setTiers(real);
     } catch (error) {
       console.error('Error loading subscription data:', error);
+    }
+    try {
+      if (await api.getAuthToken()) {
+        const sub = await api.request('/subscriptions/', { skipCache: true });
+        setActiveSub(sub && sub.status === 'active' ? sub : null);
+      } else {
+        setActiveSub(null);
+      }
+    } catch {
+      setActiveSub(null);
     }
   };
 
@@ -204,6 +242,7 @@ export default function SubscriptionPlansModal({ visible, onClose, onSuccess, us
       const transactionId = resp?.originator_conversation_id || resp?.conversation_id || resp?.mandate_id || resp?.id;
       if (resp && (resp.success || transactionId)) {
         mandateIdRef.current = transactionId;
+        ussdOriginatorRef.current = resp?.originator_conversation_id || null;
         telebirrPhoneRef.current = phoneNumber;
         setMethodInFlight('telebirr');
         setShowtelebirrReceipt(false);
@@ -291,7 +330,7 @@ export default function SubscriptionPlansModal({ visible, onClose, onSuccess, us
                   <View style={s.successIcon}>
                     <Text style={{ fontSize: 56 }}>✅</Text>
                   </View>
-                  <Text style={s.successTitle}>Subscription Active!</Text>
+                  <Text style={s.successTitle}>You are successfully subscribed!</Text>
                   <Text style={s.successSubtitle}>
                     Your <Text style={{ color: '#fff', fontWeight: '700' }}>{pendingTier.name}</Text> plan is now active.
                   </Text>
@@ -322,13 +361,7 @@ export default function SubscriptionPlansModal({ visible, onClose, onSuccess, us
                       }
                     }}
                   >
-                    <Text style={s.goldBtnText}>
-                      {user
-                        ? 'Go to FlipStar →'
-                        : methodInFlight === 'telebirr'
-                          ? (subIsNewUser ? 'Complete Registration →' : 'Log In →')
-                          : 'Check SMS →'}
-                    </Text>
+                    <Text style={s.goldBtnText}>OK</Text>
                   </TouchableOpacity>
                 </>
               ) : timedOut ? (
@@ -530,6 +563,38 @@ export default function SubscriptionPlansModal({ visible, onClose, onSuccess, us
                 <View style={s.placeholder} />
               </View>
 
+              {activeSub ? (
+                <View style={s.activeWrap}>
+                  <View style={s.activeIcon}>
+                    <Ionicons name="diamond" size={34} color="#0D1606" />
+                  </View>
+                  <Text style={s.activeTitle}>FlipStar Premium</Text>
+                  <Text style={s.activeSubtitle}>Like, comment, share and send gifts — you are all set.</Text>
+                  <View style={s.activePill}>
+                    <View style={s.activeDot} />
+                    <Text style={s.activePillText}>
+                      Active · {(activeSub.tier?.name || activeSub.plan_name || activeSub.name || 'Premium').includes('Premium')
+                        ? (activeSub.tier?.name || activeSub.plan_name || activeSub.name || 'Premium')
+                        : `${activeSub.tier?.name || activeSub.plan_name || activeSub.name} Premium`}
+                    </Text>
+                  </View>
+                  {!!activeSub.start_date && (
+                    <Text style={s.activeDate}>Start: {new Date(activeSub.start_date).toLocaleString()}</Text>
+                  )}
+                  {!!activeSub.end_date && (
+                    <Text style={s.activeDate}>End: {new Date(activeSub.end_date).toLocaleString()}</Text>
+                  )}
+                  <View style={s.activeInfoBox}>
+                    <Text style={s.activeInfoText}>
+                      <Text style={s.activeInfoStrong}>telebirr: </Text>One-tap subscription via telebirr app. One-time payment.
+                    </Text>
+                    <Text style={[s.activeInfoText, { marginTop: 6 }]}>
+                      <Text style={s.activeInfoStrong}>SMS: </Text>Send SMS to 9286 with code 1 (Daily), 2 (Weekly), 3 (Monthly) via ethio telecom.
+                    </Text>
+                  </View>
+                </View>
+              ) : (
+              <>
               <Text style={s.subtitle}>
                 Select a subscription to unlock premium features
               </Text>
@@ -593,6 +658,8 @@ export default function SubscriptionPlansModal({ visible, onClose, onSuccess, us
                   <Text style={s.smsOptionText}>or Subscribe via SMS (Send 1, 2, or 3 to 9286)</Text>
                 </TouchableOpacity>
               </View>
+              </>
+              )}
             </View>
           </View>
         </View>
@@ -788,6 +855,17 @@ const s = StyleSheet.create({
     fontWeight: '600',
     marginLeft: 4,
   },
+  activeWrap: { alignItems: 'center', paddingHorizontal: 20, paddingTop: 12 },
+  activeIcon: { width: 64, height: 64, borderRadius: 18, backgroundColor: '#8fc441', alignItems: 'center', justifyContent: 'center', marginBottom: 14 },
+  activeTitle: { color: '#fff', fontSize: 24, fontWeight: '900', marginBottom: 6 },
+  activeSubtitle: { color: '#9BA693', fontSize: 14, textAlign: 'center', marginBottom: 16 },
+  activePill: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 18, paddingVertical: 10, borderRadius: 22, backgroundColor: '#12241A', borderWidth: 1, borderColor: '#1F6B3F', marginBottom: 14 },
+  activeDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#3DDC84' },
+  activePillText: { color: '#3DDC84', fontSize: 14, fontWeight: '800' },
+  activeDate: { color: '#9BA693', fontSize: 13, marginBottom: 4 },
+  activeInfoBox: { alignSelf: 'stretch', marginTop: 18, padding: 12, borderRadius: 12, backgroundColor: '#14170F', borderWidth: 1, borderColor: '#2C3A1F' },
+  activeInfoText: { color: '#B5BDAE', fontSize: 12, lineHeight: 17 },
+  activeInfoStrong: { color: '#8fc441', fontWeight: '800' },
   smsOptionBtn: {
     flexDirection: 'row',
     alignItems: 'center',

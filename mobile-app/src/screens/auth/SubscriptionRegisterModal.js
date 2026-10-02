@@ -153,26 +153,25 @@ export default function SubscriptionRegisterModal({
       let res = null;
       let lastErrorDetail = '';
 
-      // 2. Send OTP via POST /api/v1/auth/send-login-otp/ {"phone":"09XXXXXXXX", ...}
+      // 2. Website flow: POST /auth/resend-subscription-otp/ (setup OTP SMS); fall back to send-login-otp
       try {
-        console.log('📱 [SEND LOGIN OTP REQ]:', { phone: localPhone, appKey: subData?.application_key });
-        res = await api.sendLoginOtp(localPhone, {
-          application_key: subData?.application_key,
-          product_number: subData?.product_number,
-        });
-        console.log('📱 [SEND LOGIN OTP RES]:', JSON.stringify(res));
+        console.log('📱 [RESEND SUB OTP REQ]:', { phone: localPhone });
+        res = await api.resendSubscriptionOtp(localPhone);
+        console.log('📱 [RESEND SUB OTP RES]:', JSON.stringify(res));
       } catch (e) {
         lastErrorDetail = e?.data?.error || e?.data?.message || e?.message || '';
-        console.log('📱 [SEND LOGIN OTP ERROR]:', lastErrorDetail);
+        console.log('📱 [RESEND SUB OTP ERROR]:', lastErrorDetail);
         if (e?.isRateLimited || (typeof lastErrorDetail === 'string' && lastErrorDetail.toLowerCase().includes('wait'))) {
           setErrorMsg(lastErrorDetail || 'Please wait before requesting another OTP');
           setResendTimer(45);
           return;
         }
-        // Fallback to resend-subscription-otp if sendLoginOtp failed
         try {
-          res = await api.resendSubscriptionOtp(localPhone);
-          console.log('📱 [RESEND SUB OTP RES]:', JSON.stringify(res));
+          res = await api.sendLoginOtp(localPhone, {
+            application_key: subData?.application_key,
+            product_number: subData?.product_number,
+          });
+          console.log('📱 [SEND LOGIN OTP RES]:', JSON.stringify(res));
         } catch (e2) {
           lastErrorDetail = e2?.data?.error || e2?.data?.message || e2?.message || lastErrorDetail;
         }
@@ -233,9 +232,9 @@ export default function SubscriptionRegisterModal({
       let lastErrorMsg = '';
 
       try {
-        console.log('📱 [RESEND LOGIN OTP REQ]:', { phone: localPhone });
-        res = await api.sendLoginOtp(localPhone);
-        console.log('📱 [RESEND LOGIN OTP RES]:', JSON.stringify(res));
+        console.log('📱 [RESEND SUB OTP REQ]:', { phone: localPhone });
+        res = await api.resendSubscriptionOtp(localPhone);
+        console.log('📱 [RESEND SUB OTP RES]:', JSON.stringify(res));
       } catch (e) {
         lastErrorMsg = e?.data?.error || e?.data?.message || e?.message || '';
         if (e?.isRateLimited || (typeof lastErrorMsg === 'string' && lastErrorMsg.toLowerCase().includes('wait'))) {
@@ -244,8 +243,8 @@ export default function SubscriptionRegisterModal({
           return;
         }
         try {
-          res = await api.resendSubscriptionOtp(localPhone);
-          console.log('📱 [RESEND SUB OTP RES]:', JSON.stringify(res));
+          res = await api.sendLoginOtp(localPhone);
+          console.log('📱 [RESEND LOGIN OTP RES]:', JSON.stringify(res));
         } catch (e2) {
           lastErrorMsg = e2?.data?.error || e2?.data?.message || e2?.message || lastErrorMsg;
         }
@@ -358,56 +357,27 @@ export default function SubscriptionRegisterModal({
     try {
       const raw9 = displayPhone.slice(-9);
       const localPhone = '0' + raw9;
-      const intlPhone = '251' + raw9;
-      const candidatePhones = [localPhone, intlPhone];
       const username = `user_${raw9.slice(-6)}`;
 
       let res = null;
       let lastErr = null;
+      const isDone = () => !!(res?.token || res?.user);
+      // Each wrong guess counts against the server's 3-attempt limit, so stop once locked out.
+      const isLockedOut = (e) => e?.status === 429 || /maximum attempts|throttled/i.test(`${e?.data?.error || ''}${e?.data?.detail || ''}${e?.message || ''}`);
+      const attempts = [
+        ...(isPinValid ? [() => api.loginWithSubscriptionOtp(localPhone, fullEnteredOtp, username, pin)] : []),
+        () => api.verifyTelebirrSubscriptionOtp(localPhone, fullEnteredOtp, username, pin || undefined),
+        () => api.loginWithOtp(localPhone, fullEnteredOtp),
+        () => api.verifyPhoneOTP(localPhone, fullEnteredOtp),
+      ];
 
-      // 1. Primary for SuperApp OTP login: POST /api/v1/auth/login-with-otp/
-      for (const p of candidatePhones) {
+      for (const attempt of attempts) {
         try {
-          res = await api.loginWithOtp(p, fullEnteredOtp);
-          if (res?.token || res?.user) break;
+          res = await attempt();
+          if (isDone()) break;
         } catch (e) {
           lastErr = e;
-        }
-      }
-
-      // 2. Try login-with-subscription-otp if PIN was provided
-      if (!res?.token && !res?.user && isPinValid) {
-        for (const p of candidatePhones) {
-          try {
-            res = await api.loginWithSubscriptionOtp(p, fullEnteredOtp, username, pin);
-            if (res?.token || res?.user) break;
-          } catch (e) {
-            lastErr = e;
-          }
-        }
-      }
-
-      // 3. Try verify-telebirr-subscription-otp fallback
-      if (!res?.token && !res?.user) {
-        for (const p of candidatePhones) {
-          try {
-            res = await api.verifyTelebirrSubscriptionOtp(p, fullEnteredOtp, username, pin || undefined);
-            if (res?.token || res?.user) break;
-          } catch (e) {
-            lastErr = e;
-          }
-        }
-      }
-
-      // 4. Try verify-phone-otp fallback
-      if (!res?.token && !res?.user) {
-        for (const p of candidatePhones) {
-          try {
-            res = await api.verifyPhoneOTP(p, fullEnteredOtp);
-            if (res?.token || res?.user) break;
-          } catch (e) {
-            lastErr = e;
-          }
+          if (isLockedOut(e)) break;
         }
       }
 
@@ -420,16 +390,6 @@ export default function SubscriptionRegisterModal({
       }
       if (res?.user && setUser) {
         setUser(res.user);
-      }
-
-      // If user specified a PIN and logged in via OTP, set/update their PIN for future phone+PIN login
-      if (hasPin && isPinValid && res?.token) {
-        try {
-          await api.request('/auth/change-password/', {
-            method: 'POST',
-            body: JSON.stringify({ new_password: pin, confirm_password: pin }),
-          });
-        } catch (_) {}
       }
 
       onSuccess && onSuccess(res);

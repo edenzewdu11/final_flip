@@ -112,6 +112,7 @@ const ReelItem = React.memo(function ReelItem({
   isActive, 
   itemHeight,
   isTabScreen,
+  navBarHeight,
   insets,
   onFollow,
   onShowProfile,
@@ -816,7 +817,7 @@ const ReelItem = React.memo(function ReelItem({
         </View>
 
       {/* Bottom Info */}
-      <View style={[styles.bottomInfo, { bottom: isTabScreen ? 14 : Math.max((insets?.bottom || 0) + 14, 24) }]}>
+      <View style={[styles.bottomInfo, { bottom: (isTabScreen ? 14 : Math.max((insets?.bottom || 0) + 14, 24)) + (navBarHeight || 0) }]}>
         <TouchableOpacity 
           style={styles.userInfo}
           onPress={() => onShowProfile?.(item.user?.id)}
@@ -1379,6 +1380,7 @@ export default function ReelsScreen({ navigation, route }) {
   const [reels, setReels] = useState(() => (initialReel ? [initialReel] : []));
   const [loading, setLoading] = useState(() => !initialReel);
   const [activeIndex, setActiveIndex] = useState(0);
+  const [atFirstReel, setAtFirstReel] = useState(true);
 
   const isTabScreen = route?.name === 'Reels';
   const initialTabBarHeight = isTabScreen ? (60 + (insets?.bottom || 0)) : 0;
@@ -1910,6 +1912,14 @@ export default function ReelsScreen({ navigation, route }) {
   const currentReel = reels[activeIndex];
   const isOwnCurrentReel = user?.id === currentReel?.user?.id;
 
+  // Only for reels opened from Home: nav bar shows on the opened reel, hides once scrolled away.
+  const NAV_BAR_HEIGHT = 60 + (insets?.bottom || 0);
+  const showNavBar = !isTabScreen && !!route?.params?.fromHome && atFirstReel;
+  const onReelsScroll = useCallback((e) => {
+    const nextAtFirst = e.nativeEvent.contentOffset.y < containerHeight * 0.5;
+    setAtFirstReel(prev => (prev === nextAtFirst ? prev : nextAtFirst));
+  }, [containerHeight]);
+
   const screenHandleShare = useCallback(async () => {
     setScreenMenuVisible(false);
     if (!currentReel) return;
@@ -1955,6 +1965,7 @@ export default function ReelsScreen({ navigation, route }) {
       index={index}
       itemHeight={containerHeight}
       isTabScreen={isTabScreen}
+      navBarHeight={showNavBar && index === 0 ? NAV_BAR_HEIGHT : 0}
       insets={insets}
       isActive={index === activeIndex}
       user={user}
@@ -1968,7 +1979,7 @@ export default function ReelsScreen({ navigation, route }) {
       fromDeepLink={fromDeepLink}
       localShareCounts={localShareCounts}
     />
-  ), [containerHeight, isTabScreen, insets, activeIndex, user, reels, handleShowProfile, handleNavigate, openGiftModal, handleFollow, followStates, fromDeepLink, localShareCounts]);
+  ), [containerHeight, isTabScreen, showNavBar, NAV_BAR_HEIGHT, insets, activeIndex, user, reels, handleShowProfile, handleNavigate, openGiftModal, handleFollow, followStates, fromDeepLink, localShareCounts]);
 
   return (
     <View style={[styles.container, { backgroundColor: BG }]} onLayout={onContainerLayout}>
@@ -2031,6 +2042,8 @@ export default function ReelsScreen({ navigation, route }) {
         disableIntervalMomentum={true}
         showsVerticalScrollIndicator={false}
         onViewableItemsChanged={onViewableChanged}
+        onScroll={onReelsScroll}
+        scrollEventThrottle={16}
         viewabilityConfig={viewabilityConfigRef.current}
         onEndReached={onEndReached}
         onEndReachedThreshold={0.1}
@@ -2068,6 +2081,15 @@ export default function ReelsScreen({ navigation, route }) {
       />
 
       {/* Fixed top-right overlay � AFTER FlatList so it renders on top */}
+      {!isTabScreen && (
+        <TouchableOpacity
+          style={[styles.topActionBtn, { position: 'absolute', top: insets.top + 10, left: 16, zIndex: 999, elevation: 20 }]}
+          onPress={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('MainTabs'))}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Ionicons name="chevron-back" size={24} color="#fff" />
+        </TouchableOpacity>
+      )}
       <View style={[styles.topRightActions, { top: insets.top + 10, zIndex: 999, elevation: 20 }]}>
         <TouchableOpacity style={styles.topActionBtn} onPress={() => navigation.navigate('Notifications')}>
           <Ionicons name="notifications-outline" size={24} color={LIGHT_GOLD} />
@@ -2076,6 +2098,42 @@ export default function ReelsScreen({ navigation, route }) {
           <Ionicons name="ellipsis-horizontal" size={20} color="#fff" />
         </TouchableOpacity>
       </View>
+
+      {showNavBar && (
+        <View style={[styles.homeNavBar, { height: NAV_BAR_HEIGHT, paddingBottom: insets?.bottom || 0 }]}>
+          {[
+            { key: 'Home', label: 'Home', icon: 'home-outline' },
+            { key: 'Reels', label: 'Reels', icon: 'film' },
+            { key: 'Create', label: '', icon: 'add' },
+            { key: 'Messages', label: 'Messages', icon: 'chatbubble-outline' },
+            { key: 'Profile', label: 'Profile', icon: 'person-outline' },
+          ].map((tab) => (
+            <TouchableOpacity
+              key={tab.key}
+              style={styles.homeNavItem}
+              activeOpacity={0.8}
+              onPress={() => {
+                if (tab.key === 'Messages' && !user) {
+                  navigation.navigate('Login');
+                  return;
+                }
+                navigation.navigate('MainTabs', { screen: tab.key });
+              }}
+            >
+              {tab.key === 'Create' ? (
+                <View style={styles.homeNavCreate}>
+                  <Ionicons name="add" size={26} color="#000" />
+                </View>
+              ) : (
+                <>
+                  <Ionicons name={tab.icon} size={24} color={tab.key === 'Reels' ? GOLD : '#fff'} />
+                  <Text style={[styles.homeNavLabel, tab.key === 'Reels' && { color: GOLD }]}>{tab.label}</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
 
       {/* Dropdown rendered separately so it's never clipped */}
       {screenMenuVisible && (
@@ -2358,6 +2416,24 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   
+  homeNavBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingTop: 8,
+    backgroundColor: '#0B0B0C',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(200,181,106,0.3)',
+    zIndex: 998,
+    elevation: 18,
+  },
+  homeNavItem: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 2 },
+  homeNavLabel: { fontSize: 10, fontWeight: '600', color: '#fff' },
+  homeNavCreate: { width: 44, height: 44, borderRadius: 22, backgroundColor: GOLD, alignItems: 'center', justifyContent: 'center' },
+
   // Right Side Actions
   rightActions: { 
     position: 'absolute', 

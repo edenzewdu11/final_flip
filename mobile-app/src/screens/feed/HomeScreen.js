@@ -1675,6 +1675,7 @@ export default function HomeScreen({ navigation, route }) {
     navigation.navigate('ReelsDetail', {
       initialVideoId: targetId,
       initialReel: foundPost,
+      fromHome: true,
     });
     trackView(targetId); // fire in background, don't block navigation
   }, [navigation, posts]);

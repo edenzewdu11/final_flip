@@ -418,7 +418,12 @@ export default function WebsiteCoinScreen({ navigation }) {
           </View>
         </View>
 
-        {/* Coin Packages - Minimized */}
+        {/* Or Pick Package Section */}
+        <View style={styles.packageSection}>
+        <View style={styles.sectionHeader}>
+          <Ionicons name="pricetags" size={14} color="#8fc441" />
+          <Text style={styles.sectionTitle}>OR PICK A PACKAGE</Text>
+        </View>
         <View style={styles.packagesGrid}>
           {coinPackages.map((pkg) => (
             <TouchableOpacity
@@ -468,6 +473,12 @@ export default function WebsiteCoinScreen({ navigation }) {
               </View>
             </TouchableOpacity>
           ))}
+        </View>
+
+        <View style={styles.packageFooter}>
+          <Text style={styles.packageFooterText}>Select a package</Text>
+          <Text style={styles.packageFooterSubtext}>Tap Buy on any package above to continue</Text>
+        </View>
         </View>
       </ScrollView>
 
@@ -1096,17 +1107,66 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   packagesGrid: {
-    paddingHorizontal: 16,
-    paddingBottom: 10,
+    gap: 8,
   },
   packageCard: {
     width: '100%',
-    minHeight: 268,
-    borderRadius: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
     borderWidth: 1,
-    padding: 12,
-    marginBottom: 14,
     position: 'relative',
+    backgroundColor: '#161616',
+    marginBottom: 8,
+  },
+  packageCardLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+  },
+  packageCoinInfo: {
+    justifyContent: 'center',
+  },
+  packageCardRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  packagePrice: {
+    alignItems: 'flex-end',
+  },
+  priceAmount: {
+    color: '#8fc441',
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  priceLabel: {
+    color: '#8fc441',
+    fontSize: 9,
+    fontWeight: '800',
+  },
+  packageSection: {
+    marginHorizontal: 16,
+    marginBottom: 20,
+  },
+  packageFooter: {
+    alignItems: 'center',
+    marginTop: 8,
+    paddingVertical: 8,
+  },
+  packageFooterText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#aaa',
+    marginBottom: 2,
+  },
+  packageFooterSubtext: {
+    fontSize: 11,
+    color: '#666',
   },
   coinCardTop: {
     alignItems: 'center',
@@ -1114,41 +1174,33 @@ const styles = StyleSheet.create({
     minHeight: 136,
   },
   coinIconCircle: {
-    width: 62,
-    height: 62,
-    borderRadius: 31,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#B7E66A',
-    shadowColor: '#B7E66A',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.28,
-    shadowRadius: 9,
-    elevation: 5,
-    marginBottom: 10,
+    backgroundColor: '#8fc441',
   },
   coinAmount: {
-    color: '#F5F7F1',
-    fontSize: 29,
-    lineHeight: 32,
+    color: '#fff',
+    fontSize: 17,
     fontWeight: '900',
-    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
   },
   coinLabel: {
-    color: '#B7E66A',
-    fontSize: 11,
+    color: '#8fc441',
+    fontSize: 10,
     fontWeight: '800',
-    letterSpacing: 1,
-    marginTop: 2,
+    letterSpacing: 0.5,
   },
   bonusBadge: {
-    marginTop: 10,
-    paddingHorizontal: 9,
-    paddingVertical: 5,
-    borderRadius: 12,
+    marginTop: 2,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 5,
     backgroundColor: '#12362B',
     borderWidth: 1,
     borderColor: '#17765A',
+    alignSelf: 'flex-start',
   },
   bonusText: {
     color: '#47D3A0',
@@ -1183,23 +1235,17 @@ const styles = StyleSheet.create({
   },
   buyCoinsButton: {
     backgroundColor: '#8fc441',
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    width: '100%',
-    shadowColor: '#8fc441',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.35,
-    shadowRadius: 6,
-    elevation: 4,
+    gap: 4,
   },
   buyCoinsButtonText: {
     color: '#000',
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '800',
     letterSpacing: 0.3,
   },
@@ -1219,14 +1265,14 @@ const styles = StyleSheet.create({
   },
   popularBadge: {
     position: 'absolute',
-    top: -12,
+    top: -7,
     right: 12,
     zIndex: 2,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 3,
     paddingHorizontal: 11,
-    paddingVertical: 5,
+    paddingVertical: 4,
     borderRadius: 14,
     backgroundColor: '#B7E66A',
   },

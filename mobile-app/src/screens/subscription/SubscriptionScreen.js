@@ -136,7 +136,7 @@ export default function SubscriptionScreen({ navigation }) {
           pollRef.current = null;
           setProcessingTierId(null);
           setCurrentSub(sub);
-          setSuccessMessage('Your Telebirr subscription is now active.');
+          setSuccessMessage('You are successfully subscribed!');
           setShowSuccessModal(true);
           return;
         }
@@ -283,20 +283,32 @@ export default function SubscriptionScreen({ navigation }) {
         {/* Current Subscription Status */}
         {isActive && currentSub && (
           <View style={[styles.currentSubCard, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
-            <View style={styles.currentSubHeader}>
-              <Ionicons name="checkmark-circle" size={24} color={colors.primary} />
-              <Text style={[styles.currentSubTitle, { color: colors.text }]}>Current Subscription</Text>
+            <View style={styles.activeHero}>
+              <View style={styles.activeIcon}>
+                <Ionicons name="diamond" size={32} color="#0D1606" />
+              </View>
+              <Text style={[styles.activeTitle, { color: colors.text }]}>FlipStar Premium</Text>
+              <Text style={[styles.activeSubtitle, { color: colors.textSecondary }]}>
+                Like, comment, share and send gifts — you are all set.
+              </Text>
+              <View style={styles.activePill}>
+                <View style={styles.activeDot} />
+                <Text style={styles.activePillText}>
+                  Active · {currentSub.tier?.name || currentSub.plan_name || currentSub.name || 'Premium'}
+                </Text>
+              </View>
+              {!!currentSub.start_date && (
+                <Text style={[styles.activeDate, { color: colors.textSecondary }]}>
+                  Start: {new Date(currentSub.start_date).toLocaleString()}
+                </Text>
+              )}
+              {!!currentSub.end_date && (
+                <Text style={[styles.activeDate, { color: colors.textSecondary }]}>
+                  End: {new Date(currentSub.end_date).toLocaleString()}
+                </Text>
+              )}
             </View>
             <View style={styles.currentSubDetails}>
-              <Text style={[styles.currentPlanName, { color: colors.text }]}>
-                {currentSub.tier?.name || currentSub.plan_name || currentSub.name || 'Active Plan'}
-              </Text>
-              <Text style={[styles.currentPlanDesc, { color: colors.textSecondary }]}>
-                {currentSub.tier?.description || currentSub.description || ''}
-              </Text>
-              <Text style={[styles.currentPlanExpiry, { color: colors.textSecondary }]}>
-                Status: Active Recurring — billed via {subscriptionPaymentLabel}
-              </Text>
 
               {/* Cancellation Option */}
               {isActive && isTelebirrSubscription ? (
@@ -497,6 +509,14 @@ const styles = StyleSheet.create({
   benefitsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 16 },
   benefitItem: { width: '45%', alignItems: 'center', gap: 8 },
   benefitText: { fontSize: 12, color: '#fff', textAlign: 'center', fontWeight: '600' },
+  activeHero: { alignItems: 'center', paddingBottom: 8 },
+  activeIcon: { width: 60, height: 60, borderRadius: 18, backgroundColor: '#8fc441', alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
+  activeTitle: { fontSize: 22, fontWeight: '900', marginBottom: 6 },
+  activeSubtitle: { fontSize: 13, textAlign: 'center', marginBottom: 14 },
+  activePill: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 18, paddingVertical: 10, borderRadius: 22, backgroundColor: '#12241A', borderWidth: 1, borderColor: '#1F6B3F', marginBottom: 12 },
+  activeDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#3DDC84' },
+  activePillText: { color: '#3DDC84', fontSize: 14, fontWeight: '800' },
+  activeDate: { fontSize: 13, marginBottom: 4 },
   currentSubCard: { margin: 16, padding: 20, borderRadius: 16, borderWidth: 1, borderColor: BORDER },
   currentSubHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 },
   currentSubTitle: { fontSize: 18, fontWeight: '700', color: '#fff' },

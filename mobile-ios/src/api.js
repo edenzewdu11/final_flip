@@ -145,7 +145,9 @@ async function fetchWithBaseUrlFailover(endpoint, options) {
       const response = await retryWithBackoff(async () => {
         return await fetch(getEndpointUrl(baseUrl, endpoint), options);
       });
-      if ((response.status === 404 || response.status === 502 || response.status === 503 || response.status === 504) && !isLast) {
+      const isIdempotent = !options?.method || ['GET', 'HEAD'].includes(String(options.method).toUpperCase());
+      // Re-sending a POST after a gateway error trips the server's replay protection.
+      if (isIdempotent && (response.status === 404 || response.status === 502 || response.status === 503 || response.status === 504) && !isLast) {
         lastResponse = response;
         continue;
       }
@@ -419,7 +421,7 @@ const api = {
         if (response.status === 401) {
           console.error('🔒 401 Unauthorized - authentication required');
         }
-        const silentEndpoints = ['/notifications/me/', '/profile/get_privacy/', '/profile/update_privacy/', '/blocks/', '/gamification/login-bonus/', '/privacy/consents/', '/privacy/consents/history/', '/privacy/consents/update/', '/privacy/policy/summary/', '/privacy/eu-rights/'];
+        const silentEndpoints = ['/notifications/me/', '/profile/get_privacy/', '/profile/update_privacy/', '/blocks/', '/gamification/login-bonus/', '/privacy/consents/', '/privacy/consents/history/', '/privacy/consents/update/', '/privacy/policy/summary/', '/privacy/eu-rights/', '/auth/verify-telebirr-subscription-otp/'];
         const isSilent = silentEndpoints.some(e => endpoint.includes(e));
 
         if (!isSilent) {
