@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Modal, View, Text, TouchableOpacity, StyleSheet, Animated } from 'react-native';
+import { sanitizeErrorMessage } from '../../utils/errorMessage';
 
 const GOLD = '#8fc441';
 const BG = '#111111';
@@ -68,7 +69,7 @@ export function AppAlertProvider({ children }) {
 export const AppAlert = {
   alert: (title, message, buttons, icon) => {
     if (_setAlert) {
-      _setAlert({ title, message, buttons, icon });
+      _setAlert({ title, message: typeof message === 'string' ? sanitizeErrorMessage(message) : message, buttons, icon });
     }
   },
 };

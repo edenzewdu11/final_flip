@@ -162,12 +162,8 @@ export default function CoinPurchaseScreen({ navigation, route }) {
 
       if (response.success) {
         setResultSuccess(true);
-        setResultMessage(response.message);
+        setResultMessage(`You bought ${purchaseCoins} coins successfully!`);
         setShowResultModal(true);
-        setTimeout(() => {
-          setShowResultModal(false);
-          navigation.goBack();
-        }, 2000);
       } else {
         setResultSuccess(false);
         // Map error messages to user-friendly text
@@ -560,7 +556,10 @@ export default function CoinPurchaseScreen({ navigation, route }) {
             </Text>
             <TouchableOpacity
               style={[styles.okButton, { backgroundColor: colors.primary }]}
-              onPress={() => setShowResultModal(false)}
+              onPress={() => {
+                setShowResultModal(false);
+                if (resultSuccess) navigation.goBack();
+              }}
             >
               <Text style={styles.buttonText}>OK</Text>
             </TouchableOpacity>

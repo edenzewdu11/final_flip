@@ -7,6 +7,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import api from '../../api';
+import { sanitizeErrorMessage } from '../../utils/errorMessage';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CARD_WIDTH = Math.min(SCREEN_WIDTH - 32, 440);
@@ -698,7 +699,7 @@ export default function TelebirrSubscriptionModal({
                   </View>
 
                   {otpError ? (
-                    <Text style={styles.otpErrorText}>{otpError}</Text>
+                    <Text style={styles.otpErrorText}>{sanitizeErrorMessage(otpError)}</Text>
                   ) : null}
 
                   {/* Action Row: [ Verify ] + Timer */}

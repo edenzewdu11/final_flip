@@ -232,7 +232,8 @@ export default function SubscriptionScreen({ navigation }) {
     );
   };
 
-  const isActive = currentSub?.status === 'active';
+  const isActive = currentSub?.status === 'active'
+    && (!currentSub?.end_date || new Date(currentSub.end_date) > new Date());
   const subscriptionPaymentMethod = String(
     currentSub?.payment_method || currentSub?.tier?.payment_method || ''
   ).trim().toLowerCase();

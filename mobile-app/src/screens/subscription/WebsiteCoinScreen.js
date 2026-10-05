@@ -30,6 +30,7 @@ export default function WebsiteCoinScreen({ navigation }) {
   const [userCoins, setUserCoins] = useState(0);
   const [coinPackages, setCoinPackages] = useState(COIN_PACKAGES);
   const [selectedPackage, setSelectedPackage] = useState(null);
+  const [highlightedId, setHighlightedId] = useState(null);
   const [loading, setLoading] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showPaymentMethodModal, setShowPaymentMethodModal] = useState(false);
@@ -137,12 +138,14 @@ export default function WebsiteCoinScreen({ navigation }) {
     };
     
     setSelectedPackage(customPackage);
+    setHighlightedId('custom');
     setIsCustomAmount(true);
     setShowPaymentMethodModal(true);
   };
 
   const handlePackageSelect = (pkg) => {
     setSelectedPackage(pkg);
+    setHighlightedId(pkg.id);
     setIsCustomAmount(false);
     setShowPaymentMethodModal(true);
   };
@@ -330,7 +333,7 @@ export default function WebsiteCoinScreen({ navigation }) {
             <Text style={styles.sectionTitle}>CHOOSE YOUR AMOUNT</Text>
           </View>
           
-          <View style={styles.customAmountContainer}>
+          <View style={[styles.customAmountContainer, highlightedId === 'custom' && { borderWidth: 2, borderColor: '#8fc441' }]}>
             <Text style={styles.amountLabel}>Amount</Text>
 
             <View style={styles.amountInputContainer}>
@@ -339,6 +342,7 @@ export default function WebsiteCoinScreen({ navigation }) {
                 placeholder="e.g. 5"
                 placeholderTextColor="#5B6854"
                 value={customAmount}
+                onFocus={() => setHighlightedId('custom')}
                 onChangeText={(text) => {
                   const sanitized = text.replace(/[^0-9]/g, '');
                   setCustomAmount(sanitized);
@@ -397,7 +401,7 @@ export default function WebsiteCoinScreen({ navigation }) {
                 onPress={() => handlePackageSelect(pkg)}
                 style={[
                   styles.packageCard,
-                  { backgroundColor: colors.cardBg, borderColor: pkg.popular ? '#8fc441' : '#262626' },
+                  { backgroundColor: colors.cardBg, borderColor: (highlightedId ?? coinPackages.find((p) => p.popular)?.id) === pkg.id ? '#8fc441' : '#262626' },
                 ]}
               >
                 {pkg.popular && (

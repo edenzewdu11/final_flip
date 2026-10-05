@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../contexts/AuthContext';
 import api from '../../api';
+import { sanitizeErrorMessage } from '../../utils/errorMessage';
 
 const GOLD = '#C8B56A';
 const BG = '#0D0D0D';
@@ -45,7 +46,7 @@ function ErrorBox({ msg }) {
   if (!msg) return null;
   return (
     <View style={s.errorBox}>
-      <Text style={s.errorText}>⚠️ {msg}</Text>
+      <Text style={s.errorText}>⚠️ {sanitizeErrorMessage(msg)}</Text>
     </View>
   );
 }

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Image, Platform, StyleSheet, View, AppState } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import './src/utils/errorMessage';
 import AppNavigator from './src/navigation/AppNavigator';
 import { runCryptoSelfTest } from './src/security/selfTest';
 

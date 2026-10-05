@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import api from '../../api';
+import { sanitizeErrorMessage } from '../../utils/errorMessage';
 import { useTheme } from '../../contexts/ThemeContext';
 
 const GOLD = '#8fc441';
@@ -140,7 +141,7 @@ export default function ForgotPasswordPhone({ onClose, onSuccess }) {
               {!!error && (
                 <View style={s.errorBox}>
                   <Ionicons name="alert-circle" size={20} color="#EF4444" style={{ marginRight: 8 }} />
-                  <Text style={s.errorText}>{error}</Text>
+                  <Text style={s.errorText}>{sanitizeErrorMessage(error)}</Text>
                 </View>
               )}
               {!!msg && (

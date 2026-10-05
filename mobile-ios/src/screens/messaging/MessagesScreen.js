@@ -837,9 +837,14 @@ export default function MessagesScreen({ navigation }) {
       {/* Header */}
       <View style={[styles.header, { backgroundColor: colors.cardBg, borderBottomColor: colors.border }]}>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Messages</Text>
-        <TouchableOpacity onPress={() => setShowNewChat(true)} style={{ padding: 4 }}>
-          <Ionicons name="create-outline" size={22} color={colors.primary} />
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <TouchableOpacity onPress={() => navigation.navigate('Notifications')} style={{ padding: 4, marginRight: 12 }}>
+            <Ionicons name="notifications-outline" size={22} color={colors.primary} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => setShowNewChat(true)} style={{ padding: 4 }}>
+            <Ionicons name="create-outline" size={22} color={colors.primary} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Search */}

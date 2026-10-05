@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../contexts/AuthContext';
 import api from '../../api';
+import { sanitizeErrorMessage } from '../../utils/errorMessage';
 import ForgotPasswordPhone from './ForgotPasswordPhone';
 import SubscriptionRegisterModal from './SubscriptionRegisterModal';
 import SubscriptionPlansModal from './SubscriptionPlansModal';
@@ -874,7 +875,7 @@ export default function LoginScreen({ navigation }) {
             </View>
 
             {/* Error */}
-            {!!error && <View style={s.errorBox}><Text style={s.errorText}>⚠️ {error}</Text></View>}
+            {!!error && <View style={s.errorBox}><Text style={s.errorText}>⚠️ {sanitizeErrorMessage(error)}</Text></View>}
 
             {/* Phone Number Only */}
             <View style={s.inputGroup}>

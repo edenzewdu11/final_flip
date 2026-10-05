@@ -805,14 +805,14 @@ export default function CreateScreen({ navigation, route }) {
               <Text style={styles.heroHeadingHighlight}>to life</Text>
             </Text>
             <Text style={styles.heroSubheading}>
-              Record, style with cinema filters, and broadcast to thousands across Ethiopia and beyond.
+              Record, style with filters, and share your stories across Ethiopia and beyond.
             </Text>
           </Animated.View>
 
           {/* Creative Modes Selector */}
           <View style={styles.modeSelectorWrap}>
             {[
-              { id: 'reels', label: 'Reel 9:16', icon: 'videocam', badge: 'POPULAR' },
+              { id: 'reels', label: 'Video', icon: 'videocam' },
               { id: 'photo', label: 'Snap HD', icon: 'camera' },
               { id: 'sound', label: 'Music FX', icon: 'musical-notes' },
               { id: 'campaign', label: 'Challenges', icon: 'trophy' },
@@ -891,29 +891,10 @@ export default function CreateScreen({ navigation, route }) {
                 </View>
 
                 <View style={styles.recordTextContainer}>
-                  <Text style={styles.recordHeroTitle}>Record a Reel</Text>
+                  <Text style={styles.recordHeroTitle}>Record a Video</Text>
                   <Text style={styles.recordHeroSubtitle}>
-                    Up to 90s • 4K HDR • Filters, dynamic text & music sync
+                    Capture a moment and share it with your followers
                   </Text>
-                </View>
-              </View>
-
-              {/* Bottom Specs Strip */}
-              <View style={styles.specStrip}>
-                <View style={styles.specPill}>
-                  <Ionicons name="time-outline" size={12} color="#1b300a" />
-                  <Text style={styles.specPillText}>90s Max</Text>
-                </View>
-                <View style={styles.specPill}>
-                  <Ionicons name="color-filter-outline" size={12} color="#1b300a" />
-                  <Text style={styles.specPillText}>18 Cinema FX</Text>
-                </View>
-                <View style={styles.specPill}>
-                  <Ionicons name="musical-notes-outline" size={12} color="#1b300a" />
-                  <Text style={styles.specPillText}>Audio Sync</Text>
-                </View>
-                <View style={styles.specArrowCircle}>
-                  <Ionicons name="arrow-forward" size={16} color="#8fc441" />
                 </View>
               </View>
             </LinearGradient>
@@ -978,60 +959,6 @@ export default function CreateScreen({ navigation, route }) {
                 </View>
               </LinearGradient>
             </TouchableOpacity>
-          </View>
-
-          {/* ── PRO CREATOR TOOLKIT SHOWCASE ── */}
-          <View style={styles.toolkitSection}>
-            <View style={styles.toolkitHeaderRow}>
-              <Text style={styles.toolkitTitle}>STUDIO SUITE</Text>
-              <Text style={styles.toolkitSubtitle}>INCLUDED IN CAMERA</Text>
-            </View>
-
-            <View style={styles.toolkitGrid}>
-              <View style={styles.toolItem}>
-                <LinearGradient
-                  colors={['rgba(255, 140, 0, 0.18)', 'rgba(255, 140, 0, 0.04)']}
-                  style={styles.toolIconBox}
-                >
-                  <Ionicons name="musical-notes" size={22} color="#ff9800" />
-                </LinearGradient>
-                <Text style={styles.toolName}>Trending Audio</Text>
-                <Text style={styles.toolDesc}>10,000+ tracks</Text>
-              </View>
-
-              <View style={styles.toolItem}>
-                <LinearGradient
-                  colors={['rgba(143, 196, 65, 0.18)', 'rgba(143, 196, 65, 0.04)']}
-                  style={styles.toolIconBox}
-                >
-                  <Ionicons name="color-filter" size={22} color="#8fc441" />
-                </LinearGradient>
-                <Text style={styles.toolName}>Color LUTs</Text>
-                <Text style={styles.toolDesc}>18 cinema presets</Text>
-              </View>
-
-              <View style={styles.toolItem}>
-                <LinearGradient
-                  colors={['rgba(59, 130, 246, 0.18)', 'rgba(59, 130, 246, 0.04)']}
-                  style={styles.toolIconBox}
-                >
-                  <Ionicons name="sparkles" size={22} color="#60a5fa" />
-                </LinearGradient>
-                <Text style={styles.toolName}>Auto Retouch</Text>
-                <Text style={styles.toolDesc}>Lighting & smooth</Text>
-              </View>
-
-              <View style={styles.toolItem}>
-                <LinearGradient
-                  colors={['rgba(236, 72, 153, 0.18)', 'rgba(236, 72, 153, 0.04)']}
-                  style={styles.toolIconBox}
-                >
-                  <Ionicons name="text" size={22} color="#f472b6" />
-                </LinearGradient>
-                <Text style={styles.toolName}>Dynamic Text</Text>
-                <Text style={styles.toolDesc}>Animated stickers</Text>
-              </View>
-            </View>
           </View>
         </ScrollView>
 
@@ -1603,7 +1530,7 @@ export default function CreateScreen({ navigation, route }) {
                 />
                 <Text style={styles.mediaTypeBadgeText}>
                   {media.type === 'video'
-                    ? (media.duration ? `${Math.round(media.duration)}s Reel` : 'Reel')
+                    ? (media.duration ? `${Math.round(media.duration)}s Video` : 'Video')
                     : 'Photo'}
                 </Text>
               </View>
@@ -1639,7 +1566,6 @@ export default function CreateScreen({ navigation, route }) {
                 <Ionicons name="chatbubble-ellipses-outline" size={16} color="#8fc441" />
               </View>
               <Text style={styles.cardLabel}>CAPTION & STORY</Text>
-              <Text style={styles.charCounter}>{caption.length}/500</Text>
             </View>
 
             <TextInput

@@ -8,6 +8,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../contexts/AuthContext';
 import api from '../../api';
+import { sanitizeErrorMessage } from '../../utils/errorMessage';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CARD_WIDTH = Math.min(SCREEN_WIDTH - 32, 440);
@@ -433,7 +434,7 @@ export default function SubscriptionRegisterModal({
 
                 {errorMsg ? (
                   <View style={styles.errorBanner}>
-                    <Text style={styles.errorText}>{errorMsg}</Text>
+                    <Text style={styles.errorText}>{sanitizeErrorMessage(errorMsg)}</Text>
                   </View>
                 ) : null}
 
@@ -542,7 +543,7 @@ export default function SubscriptionRegisterModal({
 
                 {errorMsg ? (
                   <View style={styles.errorBanner}>
-                    <Text style={styles.errorText}>{errorMsg}</Text>
+                    <Text style={styles.errorText}>{sanitizeErrorMessage(errorMsg)}</Text>
                   </View>
                 ) : null}
 

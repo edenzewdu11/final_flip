@@ -2091,9 +2091,6 @@ export default function ReelsScreen({ navigation, route }) {
         </TouchableOpacity>
       )}
       <View style={[styles.topRightActions, { top: insets.top + 10, zIndex: 999, elevation: 20 }]}>
-        <TouchableOpacity style={styles.topActionBtn} onPress={() => navigation.navigate('Notifications')}>
-          <Ionicons name="notifications-outline" size={24} color={LIGHT_GOLD} />
-        </TouchableOpacity>
         <TouchableOpacity style={styles.topActionBtn} onPress={() => setScreenMenuVisible(v => !v)}>
           <Ionicons name="ellipsis-horizontal" size={20} color="#fff" />
         </TouchableOpacity>

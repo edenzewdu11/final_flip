@@ -180,7 +180,7 @@ export default function SubscriptionPlansModal({ visible, onClose, onSuccess, us
     try {
       if (await api.getAuthToken()) {
         const sub = await api.request('/subscriptions/', { skipCache: true });
-        setActiveSub(sub && sub.status === 'active' ? sub : null);
+        setActiveSub(sub && sub.status === 'active' && (!sub.end_date || new Date(sub.end_date) > new Date()) ? sub : null);
       } else {
         setActiveSub(null);
       }
